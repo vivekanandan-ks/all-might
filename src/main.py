@@ -3,6 +3,8 @@ import subprocess
 import json
 import os
 import shlex
+import threading
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -14,8 +16,7 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "settings.json")
 # --- State Management ---
 class AppState:
     def __init__(self):
-        self.default_channel = "nixos-25.05"
-        # Split template into prefix and suffix
+        self.default_channel = "nixos-24.11"
         self.shell_prefix = "x-terminal-emulator -e"
         self.shell_suffix = ""
         self.available_channels = [
@@ -24,6 +25,7 @@ class AppState:
         self.active_channels = [
             "nixos-25.05", "nixos-unstable", "nixos-24.11"
         ]
+        self.cart_items = []
         self.load_settings()
 
     def load_settings(self):
@@ -42,6 +44,8 @@ class AppState:
                         self.shell_prefix = data.get("shell_template", "")
                         self.shell_suffix = ""
 
+                    self.cart_items = data.get("cart_items", [])
+
             except Exception as e:
                 print(f"Error loading settings: {e}")
 
@@ -53,7 +57,8 @@ class AppState:
                 "available_channels": self.available_channels,
                 "active_channels": self.active_channels,
                 "shell_prefix": self.shell_prefix,
-                "shell_suffix": self.shell_suffix
+                "shell_suffix": self.shell_suffix,
+                "cart_items": self.cart_items
             }
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(data, f, indent=4)
@@ -89,6 +94,38 @@ class AppState:
                 self.active_channels.remove(channel_name)
         self.save_settings()
 
+    def _get_pkg_id(self, package):
+        """Helper to get a unique identifier for a package"""
+        # Prefer package_attr_name if available (most unique)
+        if "package_attr_name" in package:
+            return package["package_attr_name"]
+        # Fallback to pname + version
+        return f"{package.get('package_pname')}-{package.get('package_pversion')}"
+
+    def is_in_cart(self, package, channel):
+        pkg_id = self._get_pkg_id(package)
+        for item in self.cart_items:
+            # Check ID and channel match
+            if self._get_pkg_id(item['package']) == pkg_id and item['channel'] == channel:
+                return True
+        return False
+
+    def add_to_cart(self, package, channel):
+        if self.is_in_cart(package, channel):
+            return False
+        self.cart_items.append({'package': package, 'channel': channel})
+        self.save_settings()
+        return True
+
+    def remove_from_cart(self, package, channel):
+        pkg_id = self._get_pkg_id(package)
+        for i, item in enumerate(self.cart_items):
+            if self._get_pkg_id(item['package']) == pkg_id and item['channel'] == channel:
+                del self.cart_items[i]
+                self.save_settings()
+                return True
+        return False
+
 state = AppState()
 
 # --- Logic: Search ---
@@ -105,26 +142,27 @@ def execute_nix_search(query, channel):
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=True)
         data = json.loads(result.stdout)
-        return data.get("results", [])
-    except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError) as e:
-        print(f"Command failed: {e}. Returning mock data.")
-        return [
-            {
-                "package_pname": "cowsay",
-                "package_pversion": "3.8.4",
-                "package_description": "Program which generates ASCII pictures of a cow",
-                "package_homepage": ["https://cowsay.diamonds"],
-                "package_license_set": ["GPL-3.0"],
-                "package_programs": ["cowsay"],
-                "package_attr_set": "No package set"
-            },
-            {
-                "package_pname": "python-cowsay",
-                "package_pversion": "1.0",
-                "package_description": "Python wrapper",
-                "package_attr_set": "python3Packages"
-            }
-        ]
+        raw_results = data.get("results", [])
+
+        # Deduplication Logic
+        seen = set()
+        unique_results = []
+        for pkg in raw_results:
+            # Create a unique signature based on name and version
+            # Use pname and version to filter out exact duplicates from different attr paths
+            sig = (pkg.get("package_pname"), pkg.get("package_pversion"))
+            if sig not in seen:
+                seen.add(sig)
+                unique_results.append(pkg)
+
+        return unique_results
+
+    except subprocess.CalledProcessError as e:
+        print(f"Nix Search Failed: {e.stderr}")
+        return [{"error": str(e.stderr)}]
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Execution Error: {e}")
+        return [{"error": f"Execution Error: {str(e)}"}]
 
 # --- Custom Controls ---
 
@@ -146,10 +184,16 @@ class GlassContainer(ft.Container):
             **kwargs
         )
 
+# Define Toast function placeholder
+show_toast_global = None
+
 class NixPackageCard(GlassContainer):
-    def __init__(self, package_data, page_ref, initial_channel):
+    def __init__(self, package_data, page_ref, initial_channel, on_cart_change=None, is_cart_view=False, show_toast_callback=None):
         self.pkg = package_data
         self.page_ref = page_ref
+        self.on_cart_change = on_cart_change
+        self.is_cart_view = is_cart_view
+        self.show_toast = show_toast_callback
 
         self.pname = self.pkg.get("package_pname", "Unknown")
         self.version = self.pkg.get("package_pversion", "?")
@@ -159,7 +203,6 @@ class NixPackageCard(GlassContainer):
         license_list = self.pkg.get("package_license_set", [])
         license_text = license_list[0] if isinstance(license_list, list) and license_list else "Unknown License"
 
-        # Store programs list for execution logic
         self.programs_list = self.pkg.get("package_programs", [])
         programs_str = ", ".join(self.programs_list) if self.programs_list else "None"
 
@@ -206,6 +249,13 @@ class NixPackageCard(GlassContainer):
             content=ft.Row(spacing=0, controls=[self.try_btn, ft.Container(width=1, height=20, bgcolor=ft.Colors.WHITE24), self.action_menu])
         )
 
+        # Dynamic Cart Button
+        self.cart_btn = ft.IconButton(
+            on_click=self.handle_cart_click,
+            tooltip="Add/Remove Cart"
+        )
+        self.update_cart_btn_state()
+
         tag_color = ft.Colors.BLUE_GREY_700 if self.attr_set == "No package set" else ft.Colors.TEAL_700
         self.tag_chip = ft.Container(
             padding=ft.padding.symmetric(horizontal=8, vertical=4),
@@ -228,7 +278,11 @@ class NixPackageCard(GlassContainer):
                                 self.tag_chip
                             ]
                         ),
-                        ft.Row(spacing=10, controls=[self.channel_dropdown, self.action_split_btn])
+                        ft.Row(spacing=10, controls=[
+                            self.channel_dropdown,
+                            self.action_split_btn,
+                            self.cart_btn
+                        ])
                     ]
                 ),
                 ft.Text(description, size=14, color=ft.Colors.WHITE70, no_wrap=False),
@@ -246,6 +300,40 @@ class NixPackageCard(GlassContainer):
         )
         super().__init__(content=content, padding=15, opacity=0.15)
 
+    def update_cart_btn_state(self):
+        in_cart = state.is_in_cart(self.pkg, self.selected_channel)
+        if in_cart:
+            self.cart_btn.icon = ft.Icons.REMOVE_SHOPPING_CART
+            self.cart_btn.icon_color = ft.Colors.RED_400
+            self.cart_btn.tooltip = "Remove from Cart"
+        else:
+            self.cart_btn.icon = ft.Icons.ADD_SHOPPING_CART
+            self.cart_btn.icon_color = ft.Colors.GREEN_400
+            self.cart_btn.tooltip = "Add to Cart"
+        # Safe update: Check if attached to page
+        if self.cart_btn.page:
+            self.cart_btn.update()
+
+    def handle_cart_click(self, e):
+        in_cart = state.is_in_cart(self.pkg, self.selected_channel)
+        action_type = "remove" if in_cart else "add"
+
+        msg = ""
+        if action_type == "add":
+            state.add_to_cart(self.pkg, self.selected_channel)
+            msg = f"Added {self.pname} to cart"
+        else:
+            state.remove_from_cart(self.pkg, self.selected_channel)
+            msg = f"Removed {self.pname} from cart"
+
+        if self.show_toast:
+            self.show_toast(msg)
+
+        self.update_cart_btn_state()
+
+        if self.on_cart_change:
+            self.on_cart_change()
+
     def change_channel(self, e):
         new_channel = e.control.data
         if new_channel == self.selected_channel: return
@@ -254,16 +342,21 @@ class NixPackageCard(GlassContainer):
         try:
             results = execute_nix_search(self.pname, new_channel)
             new_version = "?"
-            for r in results:
-                if r.get("package_pname") == self.pname:
-                    new_version = r.get("package_pversion", "?")
-                    break
+            if results and "error" in results[0]:
+                 self.channel_text.value = "Error"
             else:
-                if results: new_version = results[0].get("package_pversion", "?")
-            self.version = new_version
+                for r in results:
+                    if r.get("package_pname") == self.pname:
+                        new_version = r.get("package_pversion", "?")
+                        break
+                else:
+                    if results: new_version = results[0].get("package_pversion", "?")
+                self.version = new_version
+                self.channel_text.value = f"{self.version} ({self.selected_channel})"
+
             self.selected_channel = new_channel
-            self.channel_text.value = f"{self.version} ({self.selected_channel})"
             self.channel_text.update()
+            self.update_cart_btn_state()
         except Exception as ex:
             self.channel_text.value = "Error"
             self.channel_text.update()
@@ -290,20 +383,13 @@ class NixPackageCard(GlassContainer):
         elif mode == "shell":
             prefix = state.shell_prefix.strip()
             suffix = state.shell_suffix.strip()
-
             if not prefix:
-                 self.page_ref.show_snack_bar(ft.SnackBar(content=ft.Text("Please configure a Shell Prefix in Settings first!")))
+                 if self.show_toast: self.show_toast("Please configure Shell Prefix in Settings!")
                  return
-
-            # Use 'nix shell' but APPEND the command to run if known
             nix_cmd = f"nix shell {target}"
-
-            # If we know the program name (e.g. 'btop'), append it to run automatically inside the shell
             if self.programs_list:
-                # Use the first available program
                 prog_to_run = self.programs_list[0]
                 nix_cmd += f" --command {prog_to_run}"
-
             display_cmd = f"{prefix} {nix_cmd} {suffix}".strip()
             cmd_list = shlex.split(display_cmd)
 
@@ -336,7 +422,51 @@ def main(page: ft.Page):
     current_results = []
     active_filters = set()
 
+    # --- Custom Toast Logic ---
+    toast_text = ft.Text("", color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)
+    toast_container = ft.Container(
+        content=toast_text,
+        bgcolor=ft.Colors.with_opacity(0.9, "#2D3748"),
+        padding=ft.padding.symmetric(horizontal=16, vertical=10),
+        border_radius=25,
+        shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.with_opacity(0.3, ft.Colors.BLACK), offset=ft.Offset(0, 5)),
+        opacity=0,
+        animate_opacity=300,
+        alignment=ft.alignment.center,
+    )
+
+    # Non-expanding, positioned container for toast
+    toast_overlay = ft.Container(
+        content=toast_container,
+        bottom=90, # Positioned above bottom nav
+        left=0, right=0, # Center horizontally
+        alignment=ft.alignment.center,
+        height=50, # Fixed height to avoid blocking clicks elsewhere
+        visible=False
+    )
+
+    def show_toast(message):
+        toast_text.value = message
+        toast_overlay.visible = True
+        toast_container.opacity = 1
+        page.update()
+
+        def hide():
+            time.sleep(2.0)
+            toast_container.opacity = 0
+            page.update()
+            time.sleep(0.3)
+            toast_overlay.visible = False
+            page.update()
+
+        threading.Thread(target=hide, daemon=True).start()
+
+    global show_toast_global
+    show_toast_global = show_toast
+
+    # --- UI Elements ---
     results_column = ft.Column(spacing=10, scroll=ft.ScrollMode.HIDDEN, expand=True)
+    cart_column = ft.Column(spacing=10, scroll=ft.ScrollMode.HIDDEN, expand=True)
     result_count_text = ft.Text("", size=12, color=ft.Colors.WHITE54, visible=False)
 
     channel_dropdown = ft.Dropdown(
@@ -352,44 +482,70 @@ def main(page: ft.Page):
         expand=True,
     )
 
+    # Badges
     filter_badge_count = ft.Text("0", size=10, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)
     filter_badge_container = ft.Container(
-        content=filter_badge_count,
-        bgcolor=ft.Colors.RED_500,
-        width=16, height=16, border_radius=8,
-        alignment=ft.alignment.center,
-        visible=False,
-        top=0, right=0
+        content=filter_badge_count, bgcolor=ft.Colors.RED_500, width=16, height=16, border_radius=8,
+        alignment=ft.alignment.center, visible=False, top=0, right=0
     )
 
-    # Dismiss layer for the filter menu
+    # Cart Badge - Centered content, adjusted position relative to icon
+    cart_badge_count = ft.Text(str(len(state.cart_items)), size=10, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER)
+    cart_badge_container = ft.Container(
+        content=cart_badge_count, bgcolor=ft.Colors.RED_500, width=18, height=18, border_radius=9,
+        alignment=ft.alignment.center, visible=len(state.cart_items) > 0, top=2, right=2
+    )
+
     filter_dismiss_layer = ft.Container(
-        expand=True,
-        visible=False,
-        on_click=lambda e: toggle_filter_menu(False),
-        bgcolor=ft.Colors.with_opacity(0.01, ft.Colors.BLACK) # Almost transparent to capture clicks
+        expand=True, visible=False, on_click=lambda e: toggle_filter_menu(False),
+        bgcolor=ft.Colors.with_opacity(0.01, ft.Colors.BLACK)
     )
 
     filter_list_col = ft.Column(scroll=ft.ScrollMode.AUTO)
     filter_menu = GlassContainer(
-        visible=False,
-        width=300, height=350,
-        top=60, right=50,
-        padding=15,
-        border=ft.border.all(1, ft.Colors.WHITE24),
+        visible=False, width=300, height=350, top=60, right=50, padding=15, border=ft.border.all(1, ft.Colors.WHITE24),
         content=ft.Column([
             ft.Text("Filter by Package Set", weight=ft.FontWeight.BOLD, size=16),
             ft.Divider(height=10, color=ft.Colors.WHITE10),
             ft.Container(expand=True, content=filter_list_col),
-            ft.Row(
-                alignment=ft.MainAxisAlignment.END,
-                controls=[
-                    ft.TextButton("Close", on_click=lambda e: toggle_filter_menu(False)),
-                    ft.ElevatedButton("Apply", on_click=lambda e: apply_filters())
-                ]
-            )
+            ft.Row(alignment=ft.MainAxisAlignment.END, controls=[ft.TextButton("Close", on_click=lambda e: toggle_filter_menu(False)), ft.ElevatedButton("Apply", on_click=lambda e: apply_filters())])
         ])
     )
+
+    # --- Actions ---
+
+    def update_cart_badge():
+        count = len(state.cart_items)
+        cart_badge_count.value = str(count)
+        if cart_badge_container.page:
+            cart_badge_container.visible = count > 0
+            cart_badge_container.update()
+
+    def on_global_cart_change():
+        update_cart_badge()
+        if cart_column.page:
+            refresh_cart_view(update_ui=True)
+
+    def refresh_cart_view(update_ui=False):
+        cart_column.controls.clear()
+        if not state.cart_items:
+            cart_column.controls.append(ft.Container(content=ft.Text("Your cart is empty.", color=ft.Colors.WHITE54), alignment=ft.alignment.center, padding=20))
+        else:
+            for item in state.cart_items:
+                pkg_data = item['package']
+                saved_channel = item['channel']
+                cart_column.controls.append(
+                    NixPackageCard(
+                        pkg_data,
+                        page,
+                        saved_channel,
+                        on_cart_change=on_global_cart_change,
+                        is_cart_view=True,
+                        show_toast_callback=show_toast
+                    )
+                )
+        if update_ui and cart_column.page:
+            cart_column.update()
 
     def refresh_dropdown_options():
         channel_dropdown.options = [ft.dropdown.Option(c) for c in state.active_channels]
@@ -399,6 +555,23 @@ def main(page: ft.Page):
 
     def update_results_list():
         results_column.controls.clear()
+
+        if current_results and "error" in current_results[0]:
+            error_msg = current_results[0]["error"]
+            results_column.controls.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.Icon(ft.Icons.ERROR_OUTLINE, color=ft.Colors.RED_400, size=40),
+                        ft.Text("Search Failed", color=ft.Colors.RED_400, weight=ft.FontWeight.BOLD),
+                        ft.Text(error_msg, color=ft.Colors.WHITE70, size=12, text_align=ft.TextAlign.CENTER)
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    alignment=ft.alignment.center, padding=20
+                )
+            )
+            result_count_text.value = "Error"
+            if results_column.page: results_column.update()
+            if result_count_text.page: result_count_text.update()
+            return
 
         filtered_data = []
         if not active_filters:
@@ -412,71 +585,67 @@ def main(page: ft.Page):
 
         filter_count = len(active_filters)
         filter_badge_count.value = str(filter_count)
-        filter_badge_container.visible = filter_count > 0
-        filter_badge_container.update()
-        result_count_text.update()
+        if filter_badge_container.page:
+            filter_badge_container.visible = filter_count > 0
+            filter_badge_container.update()
+
+        if result_count_text.page:
+            result_count_text.update()
 
         if not filtered_data:
              results_column.controls.append(ft.Container(content=ft.Text("No results found.", color=ft.Colors.WHITE54), alignment=ft.alignment.center, padding=20))
         else:
             for pkg in filtered_data:
-                results_column.controls.append(NixPackageCard(pkg, page, channel_dropdown.value))
-        results_column.update()
+                results_column.controls.append(
+                    NixPackageCard(
+                        pkg,
+                        page,
+                        channel_dropdown.value,
+                        on_cart_change=on_global_cart_change,
+                        show_toast_callback=show_toast
+                    )
+                )
+        if results_column.page:
+            results_column.update()
 
     def perform_search(e):
-        results_column.controls = [ft.Container(content=ft.ProgressRing(color=ft.Colors.PURPLE_400), alignment=ft.alignment.center, padding=20)]
-        page.update()
+        if results_column.page:
+            results_column.controls = [ft.Container(content=ft.ProgressRing(color=ft.Colors.PURPLE_400), alignment=ft.alignment.center, padding=20)]
+            results_column.update()
 
-        if filter_menu.visible:
-            toggle_filter_menu(False)
-
+        if filter_menu.visible: toggle_filter_menu(False)
         query = search_field.value
         current_channel = channel_dropdown.value
         active_filters.clear()
-
         nonlocal current_results
-        current_results = execute_nix_search(query, current_channel)
-        update_results_list()
+
+        try:
+            current_results = execute_nix_search(query, current_channel)
+        finally:
+            update_results_list()
 
     pending_filters = set()
 
     def toggle_filter_menu(visible):
         if visible:
-            if not current_results:
-                page.show_snack_bar(ft.SnackBar(content=ft.Text("No search results to filter.")))
+            if not current_results or (current_results and "error" in current_results[0]):
+                show_toast("No valid search results to filter.")
                 return
-
             pending_filters.clear()
             pending_filters.update(active_filters)
-
             sets = [pkg.get("package_attr_set", "No package set") for pkg in current_results]
             counts = Counter(sets)
-
             filter_list_col.controls.clear()
-
             def on_check(e):
                 val = e.control.data
-                if e.control.value:
-                    pending_filters.add(val)
-                elif val in pending_filters:
-                    pending_filters.remove(val)
-
+                if e.control.value: pending_filters.add(val)
+                elif val in pending_filters: pending_filters.remove(val)
             for attr_set, count in counts.most_common():
-                filter_list_col.controls.append(
-                    ft.Checkbox(
-                        label=f"{attr_set} ({count})",
-                        value=(attr_set in pending_filters),
-                        on_change=on_check,
-                        data=attr_set
-                    )
-                )
-
+                filter_list_col.controls.append(ft.Checkbox(label=f"{attr_set} ({count})", value=(attr_set in pending_filters), on_change=on_check, data=attr_set))
         filter_menu.visible = visible
-        filter_dismiss_layer.visible = visible # Toggle dismiss layer
-
+        filter_dismiss_layer.visible = visible
         filter_menu.update()
-        if filter_dismiss_layer.page:
-            filter_dismiss_layer.update()
+        if filter_dismiss_layer.page: filter_dismiss_layer.update()
 
     def apply_filters():
         active_filters.clear()
@@ -503,19 +672,7 @@ def main(page: ft.Page):
                                     channel_dropdown,
                                     ft.Container(width=1, height=30, bgcolor=ft.Colors.WHITE24),
                                     search_field,
-
-                                    ft.Stack(
-                                        controls=[
-                                            ft.IconButton(
-                                                icon=ft.Icons.FILTER_LIST,
-                                                icon_color=ft.Colors.WHITE,
-                                                tooltip="Filter",
-                                                on_click=lambda e: toggle_filter_menu(not filter_menu.visible)
-                                            ),
-                                            filter_badge_container
-                                        ]
-                                    ),
-
+                                    ft.Stack(controls=[ft.IconButton(icon=ft.Icons.FILTER_LIST, icon_color=ft.Colors.WHITE, tooltip="Filter", on_click=lambda e: toggle_filter_menu(not filter_menu.visible)), filter_badge_container]),
                                     ft.IconButton(icon=ft.Icons.SEARCH, icon_color=ft.Colors.WHITE, on_click=perform_search)
                                 ]
                             )
@@ -524,75 +681,54 @@ def main(page: ft.Page):
                         results_column
                     ]
                 ),
-                # Add dismiss layer behind the menu
                 filter_dismiss_layer,
                 filter_menu
             ]
         )
 
+    def get_cart_view():
+        refresh_cart_view(update_ui=False)
+        return ft.Column(
+            expand=True,
+            controls=[
+                ft.Text("Your Cart", size=32, weight=ft.FontWeight.W_900, color=ft.Colors.WHITE),
+                cart_column
+            ]
+        )
+
     def get_settings_view():
         channels_list_col = ft.Column()
-
         def update_default_channel(e):
             state.default_channel = e.control.value
             state.save_settings()
             refresh_dropdown_options()
-            page.show_snack_bar(ft.SnackBar(content=ft.Text(f"Saved default: {state.default_channel}")))
-
-        def update_shell_prefix(e):
-            state.shell_prefix = e.control.value
-            state.save_settings()
-
-        def update_shell_suffix(e):
-            state.shell_suffix = e.control.value
-            state.save_settings()
-
+            show_toast(f"Saved default: {state.default_channel}")
+        def update_shell_prefix(e): state.shell_prefix = e.control.value; state.save_settings()
+        def update_shell_suffix(e): state.shell_suffix = e.control.value; state.save_settings()
         def toggle_channel_state(e):
-            channel = e.control.label
-            is_active = e.control.value
-            state.toggle_channel(channel, is_active)
-            refresh_dropdown_options()
-
+            channel = e.control.label; is_active = e.control.value; state.toggle_channel(channel, is_active); refresh_dropdown_options()
         def request_delete_channel(e):
-            channel_to_delete = e.control.data
-            dlg_ref = [None]
-
+            channel_to_delete = e.control.data; dlg_ref = [None]
             def on_confirm(e):
-                state.remove_channel(channel_to_delete)
-                refresh_channels_list()
-                refresh_dropdown_options()
+                state.remove_channel(channel_to_delete); refresh_channels_list(); refresh_dropdown_options()
                 if dlg_ref[0]: page.close(dlg_ref[0])
-                page.show_snack_bar(ft.SnackBar(content=ft.Text(f"Deleted: {channel_to_delete}")))
-
+                show_toast(f"Deleted: {channel_to_delete}")
             def on_cancel(e):
                 if dlg_ref[0]: page.close(dlg_ref[0])
-
             dlg = ft.AlertDialog(modal=True, title=ft.Text("Confirm Deletion"), content=ft.Text(f"Remove '{channel_to_delete}'?"), actions=[ft.TextButton("Yes", on_click=on_confirm), ft.TextButton("No", on_click=on_cancel)])
-            dlg_ref[0] = dlg
-            page.open(dlg)
-
+            dlg_ref[0] = dlg; page.open(dlg)
         def refresh_channels_list(update_ui=True):
             channels_list_col.controls.clear()
             for ch in state.available_channels:
-                channels_list_col.controls.append(
-                    ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[ft.Checkbox(label=ch, value=(ch in state.active_channels), on_change=toggle_channel_state), ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, icon_color=ft.Colors.RED_400, data=ch, on_click=request_delete_channel)])
-                )
-            if update_ui: channels_list_col.update()
-
+                channels_list_col.controls.append(ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[ft.Checkbox(label=ch, value=(ch in state.active_channels), on_change=toggle_channel_state), ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, icon_color=ft.Colors.RED_400, data=ch, on_click=request_delete_channel)]))
+            if update_ui and channels_list_col.page: channels_list_col.update()
         def add_custom_channel(e):
             if new_channel_input.value:
                 val = new_channel_input.value.strip()
                 if not val.startswith("nixos-") and not val.startswith("nixpkgs-"): val = f"nixos-{val}"
-                if state.add_channel(val):
-                    refresh_channels_list()
-                    refresh_dropdown_options()
-                    new_channel_input.value = ""
-                    new_channel_input.update()
-                    page.show_snack_bar(ft.SnackBar(content=ft.Text(f"Added channel: {val}")))
-
+                if state.add_channel(val): refresh_channels_list(); refresh_dropdown_options(); new_channel_input.value = ""; new_channel_input.update(); show_toast(f"Added channel: {val}")
         new_channel_input = ft.TextField(hint_text="e.g. 23.11", width=150, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.BLACK12)
         refresh_channels_list(update_ui=False)
-
         return ft.Column(
             scroll=ft.ScrollMode.HIDDEN,
             controls=[
@@ -603,15 +739,7 @@ def main(page: ft.Page):
                 GlassContainer(opacity=0.1, padding=15, content=ft.Column([ft.Text("Available Channels", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE), ft.Container(height=10), ft.Container(height=150, content=ft.Column(scroll=ft.ScrollMode.AUTO, controls=[channels_list_col])), ft.Divider(color=ft.Colors.WHITE24), ft.Row([ft.Text("Add Channel:", size=12), new_channel_input, ft.IconButton(ft.Icons.ADD_CIRCLE, icon_color=ft.Colors.GREEN_400, on_click=add_custom_channel)])])),
                 ft.Container(height=10),
                 ft.Text("Run Configurations", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE54),
-                GlassContainer(opacity=0.1, padding=15, content=ft.Column([
-                    ft.Text("Command Prefix", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                    ft.Text("e.g. gnome-terminal --", size=12, color=ft.Colors.WHITE54),
-                    ft.TextField(value=state.shell_prefix, hint_text="e.g. x-terminal-emulator -e", text_size=12, filled=True, bgcolor=ft.Colors.BLACK12, on_change=update_shell_prefix),
-                    ft.Container(height=5),
-                    ft.Text("Command Suffix", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                    ft.Text("e.g. suffix arguments", size=12, color=ft.Colors.WHITE54),
-                    ft.TextField(value=state.shell_suffix, hint_text="optional suffix", text_size=12, filled=True, bgcolor=ft.Colors.BLACK12, on_change=update_shell_suffix)
-                ])),
+                GlassContainer(opacity=0.1, padding=15, content=ft.Column([ft.Text("Command Prefix", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE), ft.Text("e.g. gnome-terminal --", size=12, color=ft.Colors.WHITE54), ft.TextField(value=state.shell_prefix, hint_text="e.g. x-terminal-emulator -e", text_size=12, filled=True, bgcolor=ft.Colors.BLACK12, on_change=update_shell_prefix), ft.Container(height=5), ft.Text("Command Suffix", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE), ft.Text("e.g. suffix arguments", size=12, color=ft.Colors.WHITE54), ft.TextField(value=state.shell_suffix, hint_text="optional suffix", text_size=12, filled=True, bgcolor=ft.Colors.BLACK12, on_change=update_shell_suffix)])),
                 ft.Container(height=10),
                 ft.Text("Defaults", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE54),
                 GlassContainer(opacity=0.1, padding=15, content=ft.Column([ft.Text("Default Search Channel", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE), ft.Container(height=5), ft.Dropdown(options=[ft.dropdown.Option(c) for c in state.available_channels], value=state.default_channel, on_change=update_default_channel, bgcolor=ft.Colors.GREY_900, border_color=ft.Colors.WHITE24, text_style=ft.TextStyle(color=ft.Colors.WHITE), filled=True)])),
@@ -623,28 +751,68 @@ def main(page: ft.Page):
 
     def build_custom_navbar(on_change):
         buttons = []
-        items = [(ft.Icons.SEARCH_OUTLINED, ft.Icons.SEARCH, "Search"), (ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, "Settings")]
+        items = [
+            (ft.Icons.SEARCH_OUTLINED, ft.Icons.SEARCH, "Search"),
+            (ft.Icons.SHOPPING_CART_OUTLINED, ft.Icons.SHOPPING_CART, "Cart"),
+            (ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, "Settings")
+        ]
+
+        def create_nav_btn(i, icon_off, icon_on, label):
+            btn = ft.IconButton(
+                icon=icon_on if i == 0 else icon_off,
+                icon_color=ft.Colors.WHITE if i == 0 else ft.Colors.WHITE54,
+                data=i,
+                on_click=handle_click,
+                tooltip=label,
+                style=ft.ButtonStyle(shape=ft.CircleBorder(), padding=10)
+            )
+
+            if label == "Cart":
+                return ft.Stack(
+                    controls=[
+                        btn,
+                        cart_badge_container
+                    ]
+                )
+            return btn
+
         def handle_click(e):
             idx = e.control.data
-            for i, btn in enumerate(buttons):
-                is_selected = (i == idx)
-                btn.icon = items[i][1] if is_selected else items[i][0]
+            for j, btn_stack in enumerate(buttons):
+                btn = btn_stack.controls[0] if isinstance(btn_stack, ft.Stack) else btn_stack
+                is_selected = (j == idx)
+                btn.icon = items[j][1] if is_selected else items[j][0]
                 btn.icon_color = ft.Colors.WHITE if is_selected else ft.Colors.WHITE54
                 btn.update()
             on_change(idx)
+
         for i, (icon_off, icon_on, label) in enumerate(items):
-            buttons.append(ft.IconButton(icon=icon_on if i == 0 else icon_off, icon_color=ft.Colors.WHITE if i == 0 else ft.Colors.WHITE54, data=i, on_click=handle_click, tooltip=label, style=ft.ButtonStyle(shape=ft.CircleBorder(), padding=10)))
+            buttons.append(create_nav_btn(i, icon_off, icon_on, label))
+
         return GlassContainer(opacity=0.15, border_radius=0, blur_sigma=15, padding=15, margin=0, content=ft.Row(controls=buttons, alignment=ft.MainAxisAlignment.SPACE_EVENLY))
 
     def on_nav_change(idx):
         if idx == 0: content_area.content = get_search_view()
-        elif idx == 1: content_area.content = get_settings_view()
+        elif idx == 1: content_area.content = get_cart_view()
+        elif idx == 2: content_area.content = get_settings_view()
         content_area.update()
 
     nav_bar = build_custom_navbar(on_nav_change)
     background = ft.Container(expand=True, gradient=ft.LinearGradient(begin=ft.alignment.top_left, end=ft.alignment.bottom_right, colors=["#1a1b26", "#24283b", "#414868"]))
     decorations = ft.Stack(controls=[ft.Container(width=300, height=300, bgcolor=ft.Colors.CYAN_900, border_radius=150, top=-100, right=-50, blur=ft.Blur(100, 100, ft.BlurTileMode.MIRROR), opacity=0.3), ft.Container(width=200, height=200, bgcolor=ft.Colors.PURPLE_900, border_radius=100, bottom=100, left=-50, blur=ft.Blur(80, 80, ft.BlurTileMode.MIRROR), opacity=0.3)])
-    page.add(ft.Stack(expand=True, controls=[background, decorations, ft.Column(expand=True, spacing=0, controls=[content_area, nav_bar])]))
+
+    # Toast Overlay Layer
+    page.add(
+        ft.Stack(
+            expand=True,
+            controls=[
+                background,
+                decorations,
+                ft.Column(expand=True, spacing=0, controls=[content_area, nav_bar]),
+                toast_overlay # Add toast layer on top
+            ]
+        )
+    )
 
 if __name__ == "__main__":
     ft.app(target=main)
