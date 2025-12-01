@@ -1,28 +1,143 @@
 import flet as ft
+import subprocess
+import json
+import os
+import shlex
+from collections import Counter
+from pathlib import Path
 
-# --- Mock Data ---
-APPS_DATA = [
-    {"name": "Nebula Notes", "category": "Productivity", "rating": "4.8", "icon": ft.Icons.EDIT_NOTE, "color": ft.Colors.PURPLE_400},
-    {"name": "Zenith Fitness", "category": "Health", "rating": "4.9", "icon": ft.Icons.FITNESS_CENTER, "color": ft.Colors.GREEN_400},
-    {"name": "Quantum Browser", "category": "Tools", "rating": "4.5", "icon": ft.Icons.PUBLIC, "color": ft.Colors.BLUE_400},
-    {"name": "Pixel Painter", "category": "Design", "rating": "4.7", "icon": ft.Icons.PALETTE, "color": ft.Colors.ORANGE_400},
-    {"name": "Echo Music", "category": "Entertainment", "rating": "4.6", "icon": ft.Icons.MUSIC_NOTE, "color": ft.Colors.PINK_400},
-    {"name": "Cyber Guard", "category": "Security", "rating": "4.9", "icon": ft.Icons.SECURITY, "color": ft.Colors.CYAN_400},
-]
+# --- Constants ---
+APP_NAME = "All Might"
+CONFIG_DIR = os.path.expanduser("~/.config/all-might")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "settings.json")
 
-SEARCH_SUGGESTIONS = ["Photo Editor", "VPN", "Games", "ToDo List", "Weather"]
+# --- State Management ---
+class AppState:
+    def __init__(self):
+        self.default_channel = "nixos-25.05"
+        # Split template into prefix and suffix
+        self.shell_prefix = "x-terminal-emulator -e"
+        self.shell_suffix = ""
+        self.available_channels = [
+            "nixos-25.05", "nixos-unstable", "nixos-24.11", "nixos-24.05"
+        ]
+        self.active_channels = [
+            "nixos-25.05", "nixos-unstable", "nixos-24.11"
+        ]
+        self.load_settings()
+
+    def load_settings(self):
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, 'r') as f:
+                    data = json.load(f)
+                    self.default_channel = data.get("default_channel", self.default_channel)
+                    self.available_channels = data.get("available_channels", self.available_channels)
+                    self.active_channels = data.get("active_channels", self.active_channels)
+
+                    if "shell_prefix" in data:
+                        self.shell_prefix = data.get("shell_prefix", "")
+                        self.shell_suffix = data.get("shell_suffix", "")
+                    elif "shell_template" in data:
+                        self.shell_prefix = data.get("shell_template", "")
+                        self.shell_suffix = ""
+
+            except Exception as e:
+                print(f"Error loading settings: {e}")
+
+    def save_settings(self):
+        try:
+            Path(CONFIG_DIR).mkdir(parents=True, exist_ok=True)
+            data = {
+                "default_channel": self.default_channel,
+                "available_channels": self.available_channels,
+                "active_channels": self.active_channels,
+                "shell_prefix": self.shell_prefix,
+                "shell_suffix": self.shell_suffix
+            }
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"Error saving settings: {e}")
+
+    def add_channel(self, channel_name):
+        if channel_name and channel_name not in self.available_channels:
+            self.available_channels.append(channel_name)
+            if channel_name not in self.active_channels:
+                self.active_channels.append(channel_name)
+            self.save_settings()
+            return True
+        return False
+
+    def remove_channel(self, channel_name):
+        if channel_name in self.available_channels:
+            self.available_channels.remove(channel_name)
+            if channel_name in self.active_channels:
+                self.active_channels.remove(channel_name)
+            if self.default_channel == channel_name:
+                self.default_channel = self.available_channels[0] if self.available_channels else "nixos-unstable"
+            self.save_settings()
+            return True
+        return False
+
+    def toggle_channel(self, channel_name, is_active):
+        if is_active:
+            if channel_name not in self.active_channels:
+                self.active_channels.append(channel_name)
+        else:
+            if channel_name in self.active_channels:
+                self.active_channels.remove(channel_name)
+        self.save_settings()
+
+state = AppState()
+
+# --- Logic: Search ---
+
+def execute_nix_search(query, channel):
+    if not query:
+        return []
+
+    command = [
+        "nix", "run", "nixpkgs#nh", "--",
+        "search", "--channel", channel, "-j", "--limit", "30", query
+    ]
+
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        return data.get("results", [])
+    except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Command failed: {e}. Returning mock data.")
+        return [
+            {
+                "package_pname": "cowsay",
+                "package_pversion": "3.8.4",
+                "package_description": "Program which generates ASCII pictures of a cow",
+                "package_homepage": ["https://cowsay.diamonds"],
+                "package_license_set": ["GPL-3.0"],
+                "package_programs": ["cowsay"],
+                "package_attr_set": "No package set"
+            },
+            {
+                "package_pname": "python-cowsay",
+                "package_pversion": "1.0",
+                "package_description": "Python wrapper",
+                "package_attr_set": "python3Packages"
+            }
+        ]
 
 # --- Custom Controls ---
 
 class GlassContainer(ft.Container):
-    """A helper container that applies the glassmorphic style."""
     def __init__(self, content, opacity=0.1, blur_sigma=10, border_radius=15, **kwargs):
+        if "border" not in kwargs:
+            kwargs["border"] = ft.border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE))
+
         super().__init__(
             content=content,
             bgcolor=ft.Colors.with_opacity(opacity, ft.Colors.WHITE),
             blur=ft.Blur(blur_sigma, blur_sigma, ft.BlurTileMode.MIRROR),
             border_radius=border_radius,
-            border=ft.border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE)),
             shadow=ft.BoxShadow(
                 spread_radius=1,
                 blur_radius=15,
@@ -31,313 +146,505 @@ class GlassContainer(ft.Container):
             **kwargs
         )
 
-class AppCard(GlassContainer):
-    """A card displaying an individual app."""
-    def __init__(self, app_data):
-        self.app_data = app_data
+class NixPackageCard(GlassContainer):
+    def __init__(self, package_data, page_ref, initial_channel):
+        self.pkg = package_data
+        self.page_ref = page_ref
 
-        content = ft.Row(
+        self.pname = self.pkg.get("package_pname", "Unknown")
+        self.version = self.pkg.get("package_pversion", "?")
+        description = self.pkg.get("package_description") or "No description available."
+        homepage_list = self.pkg.get("package_homepage", [])
+        homepage_url = homepage_list[0] if isinstance(homepage_list, list) and homepage_list else ""
+        license_list = self.pkg.get("package_license_set", [])
+        license_text = license_list[0] if isinstance(license_list, list) and license_list else "Unknown License"
+
+        # Store programs list for execution logic
+        self.programs_list = self.pkg.get("package_programs", [])
+        programs_str = ", ".join(self.programs_list) if self.programs_list else "None"
+
+        file_path = self.pkg.get("package_position", "").split(":")[0]
+        source_url = f"https://github.com/NixOS/nixpkgs/blob/master/{file_path}" if file_path else ""
+        self.attr_set = self.pkg.get("package_attr_set", "No package set")
+
+        self.selected_channel = initial_channel
+        self.run_mode = "direct"
+
+        self.channel_text = ft.Text(f"{self.version} ({self.selected_channel})", size=12, color=ft.Colors.WHITE70)
+        channel_menu_items = [ft.PopupMenuItem(text=ch, on_click=self.change_channel, data=ch) for ch in state.active_channels]
+
+        self.channel_selector = ft.Container(
+            padding=ft.padding.symmetric(horizontal=10, vertical=5),
+            border_radius=8,
+            border=ft.border.all(1, ft.Colors.WHITE24),
+            content=ft.Row(spacing=5, controls=[self.channel_text, ft.Icon(ft.Icons.ARROW_DROP_DOWN, color=ft.Colors.WHITE70, size=16)]),
+        )
+        self.channel_dropdown = ft.PopupMenuButton(content=self.channel_selector, items=channel_menu_items, tooltip="Select Channel")
+
+        self.try_btn_icon = ft.Icon(ft.Icons.PLAY_ARROW, size=16, color=ft.Colors.WHITE)
+        self.try_btn_text = ft.Text("Try running directly", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE, size=12)
+
+        self.try_btn = ft.Container(
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            content=ft.Row(spacing=8, controls=[self.try_btn_icon, self.try_btn_text], alignment=ft.MainAxisAlignment.CENTER),
+            on_click=lambda e: self.run_action(self.run_mode),
+            border_radius=ft.border_radius.only(top_left=8, bottom_left=8),
+            bgcolor=ft.Colors.BLUE_700,
+            ink=True
+        )
+
+        self.action_menu = ft.PopupMenuButton(
+            icon=ft.Icons.ARROW_DROP_DOWN, icon_color=ft.Colors.WHITE,
+            items=[
+                ft.PopupMenuItem(text="Try running directly", icon=ft.Icons.PLAY_ARROW, on_click=lambda e: self.set_mode_and_run("direct")),
+                ft.PopupMenuItem(text="Try in a shell", icon=ft.Icons.TERMINAL, on_click=lambda e: self.set_mode_and_run("shell")),
+            ]
+        )
+
+        self.action_split_btn = ft.Container(
+            bgcolor=ft.Colors.BLUE_700, border_radius=8,
+            content=ft.Row(spacing=0, controls=[self.try_btn, ft.Container(width=1, height=20, bgcolor=ft.Colors.WHITE24), self.action_menu])
+        )
+
+        tag_color = ft.Colors.BLUE_GREY_700 if self.attr_set == "No package set" else ft.Colors.TEAL_700
+        self.tag_chip = ft.Container(
+            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+            border_radius=12,
+            bgcolor=ft.Colors.with_opacity(0.5, tag_color),
+            content=ft.Text(self.attr_set, size=10, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD),
+            visible=bool(self.attr_set)
+        )
+
+        content = ft.Column(
+            spacing=8,
             controls=[
-                ft.Container(
-                    content=ft.Icon(self.app_data["icon"], color=ft.Colors.WHITE, size=30),
-                    width=60, height=60,
-                    bgcolor=self.app_data["color"],
-                    border_radius=12,
-                    alignment=ft.alignment.center
-                ),
-                ft.Column(
-                    spacing=2,
+                ft.Row(
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
-                        ft.Text(self.app_data["name"], weight=ft.FontWeight.BOLD, size=16, color=ft.Colors.WHITE),
-                        ft.Text(self.app_data["category"], size=12, color=ft.Colors.WHITE70),
-                        ft.Row([
-                            ft.Icon(ft.Icons.STAR, size=14, color=ft.Colors.AMBER),
-                            ft.Text(self.app_data["rating"], size=12, color=ft.Colors.WHITE)
-                        ], spacing=2)
+                        ft.Column(
+                            spacing=4,
+                            controls=[
+                                ft.Text(self.pname, weight=ft.FontWeight.BOLD, size=18, color=ft.Colors.WHITE),
+                                self.tag_chip
+                            ]
+                        ),
+                        ft.Row(spacing=10, controls=[self.channel_dropdown, self.action_split_btn])
                     ]
                 ),
-                ft.Container(expand=True),
-                ft.IconButton(
-                    icon=ft.Icons.DOWNLOAD_ROUNDED,
-                    icon_color=ft.Colors.WHITE,
-                    style=ft.ButtonStyle(bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.WHITE))
+                ft.Text(description, size=14, color=ft.Colors.WHITE70, no_wrap=False),
+                ft.Divider(color=ft.Colors.WHITE10, height=5),
+                ft.Row(visible=bool(self.programs_list), controls=[ft.Icon(ft.Icons.TERMINAL, size=14, color=ft.Colors.ORANGE_300), ft.Text("Programs: ", size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.ORANGE_100), ft.Text(programs_str, size=12, color=ft.Colors.WHITE60, expand=True, no_wrap=False)], vertical_alignment=ft.CrossAxisAlignment.START),
+                ft.Row(
+                    wrap=True, run_spacing=10,
+                    controls=[
+                        ft.Container(content=ft.Row([ft.Icon(ft.Icons.VERIFIED_USER_OUTLINED, size=14, color=ft.Colors.GREEN_300), ft.Text(license_text, size=12, color=ft.Colors.GREEN_100)], spacing=5)),
+                        ft.Container(visible=bool(homepage_url), content=ft.Row([ft.Icon(ft.Icons.LINK, size=14, color=ft.Colors.BLUE_300), ft.Text("Homepage", size=12, color=ft.Colors.BLUE_100)], spacing=5), on_click=lambda _: os.system(f"xdg-open {homepage_url}") if homepage_url else None),
+                        ft.Container(visible=bool(source_url), content=ft.Row([ft.Icon(ft.Icons.CODE, size=14, color=ft.Colors.PURPLE_300), ft.Text("Source", size=12, color=ft.Colors.PURPLE_100)], spacing=5), on_click=lambda _: os.system(f"xdg-open {source_url}") if source_url else None),
+                    ]
                 )
-            ],
+            ]
         )
         super().__init__(content=content, padding=15, opacity=0.15)
 
-class FeaturedCard(GlassContainer):
-    """Large featured app card for the home screen."""
-    def __init__(self):
-        content = ft.Row(
-            controls=[
-                ft.Column(
-                    expand=True,
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    controls=[
-                        ft.Container(
-                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                            bgcolor=ft.Colors.with_opacity(0.3, ft.Colors.ORANGE),
-                            border_radius=5,
-                            content=ft.Text("EDITOR'S CHOICE", size=10, weight=ft.FontWeight.BOLD, color=ft.Colors.ORANGE_100)
-                        ),
-                        ft.Text("Cosmic Journey", size=28, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                        ft.Text("Explore the universe from your pocket.", size=14, color=ft.Colors.WHITE70),
-                        ft.ElevatedButton(
-                            "Install Now",
-                            color=ft.Colors.WHITE,
-                            bgcolor=ft.Colors.BLUE_600,
-                            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10))
-                        )
-                    ]
-                ),
-                ft.Icon(ft.Icons.ROCKET_LAUNCH, size=100, color=ft.Colors.WHITE24)
-            ]
+    def change_channel(self, e):
+        new_channel = e.control.data
+        if new_channel == self.selected_channel: return
+        self.channel_text.value = f"Fetching..."
+        self.channel_text.update()
+        try:
+            results = execute_nix_search(self.pname, new_channel)
+            new_version = "?"
+            for r in results:
+                if r.get("package_pname") == self.pname:
+                    new_version = r.get("package_pversion", "?")
+                    break
+            else:
+                if results: new_version = results[0].get("package_pversion", "?")
+            self.version = new_version
+            self.selected_channel = new_channel
+            self.channel_text.value = f"{self.version} ({self.selected_channel})"
+            self.channel_text.update()
+        except Exception as ex:
+            self.channel_text.value = "Error"
+            self.channel_text.update()
+
+    def set_mode_and_run(self, mode):
+        self.run_mode = mode
+        if mode == "direct":
+            self.try_btn_text.value = "Try running directly"
+            self.try_btn_icon.name = ft.Icons.PLAY_ARROW
+        elif mode == "shell":
+            self.try_btn_text.value = "Try in a shell"
+            self.try_btn_icon.name = ft.Icons.TERMINAL
+        self.try_btn_text.update()
+        self.try_btn_icon.update()
+
+    def run_action(self, mode):
+        target = f"nixpkgs/{self.selected_channel}#{self.pname}"
+        cmd_list = []
+        display_cmd = ""
+
+        if mode == "direct":
+            cmd_list = ["nix", "run", target]
+            display_cmd = f"nix run {target}"
+        elif mode == "shell":
+            prefix = state.shell_prefix.strip()
+            suffix = state.shell_suffix.strip()
+
+            if not prefix:
+                 self.page_ref.show_snack_bar(ft.SnackBar(content=ft.Text("Please configure a Shell Prefix in Settings first!")))
+                 return
+
+            # Use 'nix shell' but APPEND the command to run if known
+            nix_cmd = f"nix shell {target}"
+
+            # If we know the program name (e.g. 'btop'), append it to run automatically inside the shell
+            if self.programs_list:
+                # Use the first available program
+                prog_to_run = self.programs_list[0]
+                nix_cmd += f" --command {prog_to_run}"
+
+            display_cmd = f"{prefix} {nix_cmd} {suffix}".strip()
+            cmd_list = shlex.split(display_cmd)
+
+        output_text = ft.Text("Launching process in background...", font_family="monospace", size=12)
+        dlg = ft.AlertDialog(
+            title=ft.Text(f"Launching: {mode.capitalize()}"),
+            content=ft.Container(width=500, height=150, content=ft.Column([ft.Text(f"Command: {display_cmd}", color=ft.Colors.BLUE_200, size=12, selectable=True), ft.Divider(), ft.Column([output_text], scroll=ft.ScrollMode.AUTO, expand=True), ft.Text("Note: GUI apps appear shortly. For TUI apps, use 'Try in a shell'.", size=10, color=ft.Colors.GREY_500)])),
+            actions=[ft.TextButton("Close", on_click=lambda e: self.page_ref.close(dlg))]
         )
-        super().__init__(content=content, height=200, opacity=0.2, padding=20)
+        self.page_ref.open(dlg)
+        self.page_ref.update()
+
+        try:
+            subprocess.Popen(cmd_list, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            output_text.value = "Process started.\nYou can close this dialog."
+            self.page_ref.update()
+        except Exception as ex:
+            output_text.value = f"Error executing command:\n{str(ex)}"
+            self.page_ref.update()
 
 # --- Main Application ---
 
 def main(page: ft.Page):
-    page.title = "Glassmorphic App Store"
+    page.title = APP_NAME
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 0
     page.window_width = 400
     page.window_height = 800
 
-    # -- Views Content --
+    current_results = []
+    active_filters = set()
 
-    # 1. Discover View
-    def get_discover_view():
-        return ft.Column(
-            scroll=ft.ScrollMode.HIDDEN,
-            controls=[
-                ft.Text("Discover", size=32, weight=ft.FontWeight.W_900, color=ft.Colors.WHITE),
-                FeaturedCard(),
-                ft.Container(height=10),
-                ft.Text("Trending Now", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                ft.Column(
-                    spacing=10,
-                    controls=[AppCard(app) for app in APPS_DATA[:3]]
-                ),
-                ft.Container(height=10),
-                ft.Text("New Arrivals", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                ft.Column(
-                    spacing=10,
-                    controls=[AppCard(app) for app in APPS_DATA[3:]]
-                ),
-                ft.Container(height=80) # Spacer for bottom nav
-            ]
-        )
+    results_column = ft.Column(spacing=10, scroll=ft.ScrollMode.HIDDEN, expand=True)
+    result_count_text = ft.Text("", size=12, color=ft.Colors.WHITE54, visible=False)
 
-    # 2. Search View
-    def get_search_view():
-        return ft.Column(
-            controls=[
-                ft.Text("Search", size=32, weight=ft.FontWeight.W_900, color=ft.Colors.WHITE),
-                GlassContainer(
-                    opacity=0.15,
-                    padding=ft.padding.only(left=15),
-                    content=ft.TextField(
-                        hint_text="Games, Apps, Books...",
-                        border=ft.InputBorder.NONE,
-                        hint_style=ft.TextStyle(color=ft.Colors.WHITE54),
-                        text_style=ft.TextStyle(color=ft.Colors.WHITE),
-                        prefix_icon=ft.Icons.SEARCH,
-                        prefix_style=ft.TextStyle(color=ft.Colors.WHITE54)
+    channel_dropdown = ft.Dropdown(
+        width=160, text_size=12, border_color=ft.Colors.TRANSPARENT, bgcolor=ft.Colors.GREY_900,
+        value=state.default_channel if state.default_channel in state.active_channels else (state.active_channels[0] if state.active_channels else ""),
+        options=[ft.dropdown.Option(c) for c in state.active_channels],
+        content_padding=10, filled=True,
+    )
+
+    search_field = ft.TextField(
+        hint_text="Search packages...", border=ft.InputBorder.NONE,
+        hint_style=ft.TextStyle(color=ft.Colors.WHITE54), text_style=ft.TextStyle(color=ft.Colors.WHITE),
+        expand=True,
+    )
+
+    filter_badge_count = ft.Text("0", size=10, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)
+    filter_badge_container = ft.Container(
+        content=filter_badge_count,
+        bgcolor=ft.Colors.RED_500,
+        width=16, height=16, border_radius=8,
+        alignment=ft.alignment.center,
+        visible=False,
+        top=0, right=0
+    )
+
+    # Dismiss layer for the filter menu
+    filter_dismiss_layer = ft.Container(
+        expand=True,
+        visible=False,
+        on_click=lambda e: toggle_filter_menu(False),
+        bgcolor=ft.Colors.with_opacity(0.01, ft.Colors.BLACK) # Almost transparent to capture clicks
+    )
+
+    filter_list_col = ft.Column(scroll=ft.ScrollMode.AUTO)
+    filter_menu = GlassContainer(
+        visible=False,
+        width=300, height=350,
+        top=60, right=50,
+        padding=15,
+        border=ft.border.all(1, ft.Colors.WHITE24),
+        content=ft.Column([
+            ft.Text("Filter by Package Set", weight=ft.FontWeight.BOLD, size=16),
+            ft.Divider(height=10, color=ft.Colors.WHITE10),
+            ft.Container(expand=True, content=filter_list_col),
+            ft.Row(
+                alignment=ft.MainAxisAlignment.END,
+                controls=[
+                    ft.TextButton("Close", on_click=lambda e: toggle_filter_menu(False)),
+                    ft.ElevatedButton("Apply", on_click=lambda e: apply_filters())
+                ]
+            )
+        ])
+    )
+
+    def refresh_dropdown_options():
+        channel_dropdown.options = [ft.dropdown.Option(c) for c in state.active_channels]
+        if state.default_channel in state.active_channels: channel_dropdown.value = state.default_channel
+        elif state.active_channels: channel_dropdown.value = state.active_channels[0]
+        if channel_dropdown.page: channel_dropdown.update()
+
+    def update_results_list():
+        results_column.controls.clear()
+
+        filtered_data = []
+        if not active_filters:
+            filtered_data = current_results
+            result_count_text.value = f"Showing total {len(current_results)} results"
+        else:
+            filtered_data = [pkg for pkg in current_results if pkg.get("package_attr_set", "No package set") in active_filters]
+            result_count_text.value = f"Showing {len(filtered_data)} filtered results from total {len(current_results)} results"
+
+        result_count_text.visible = True
+
+        filter_count = len(active_filters)
+        filter_badge_count.value = str(filter_count)
+        filter_badge_container.visible = filter_count > 0
+        filter_badge_container.update()
+        result_count_text.update()
+
+        if not filtered_data:
+             results_column.controls.append(ft.Container(content=ft.Text("No results found.", color=ft.Colors.WHITE54), alignment=ft.alignment.center, padding=20))
+        else:
+            for pkg in filtered_data:
+                results_column.controls.append(NixPackageCard(pkg, page, channel_dropdown.value))
+        results_column.update()
+
+    def perform_search(e):
+        results_column.controls = [ft.Container(content=ft.ProgressRing(color=ft.Colors.PURPLE_400), alignment=ft.alignment.center, padding=20)]
+        page.update()
+
+        if filter_menu.visible:
+            toggle_filter_menu(False)
+
+        query = search_field.value
+        current_channel = channel_dropdown.value
+        active_filters.clear()
+
+        nonlocal current_results
+        current_results = execute_nix_search(query, current_channel)
+        update_results_list()
+
+    pending_filters = set()
+
+    def toggle_filter_menu(visible):
+        if visible:
+            if not current_results:
+                page.show_snack_bar(ft.SnackBar(content=ft.Text("No search results to filter.")))
+                return
+
+            pending_filters.clear()
+            pending_filters.update(active_filters)
+
+            sets = [pkg.get("package_attr_set", "No package set") for pkg in current_results]
+            counts = Counter(sets)
+
+            filter_list_col.controls.clear()
+
+            def on_check(e):
+                val = e.control.data
+                if e.control.value:
+                    pending_filters.add(val)
+                elif val in pending_filters:
+                    pending_filters.remove(val)
+
+            for attr_set, count in counts.most_common():
+                filter_list_col.controls.append(
+                    ft.Checkbox(
+                        label=f"{attr_set} ({count})",
+                        value=(attr_set in pending_filters),
+                        on_change=on_check,
+                        data=attr_set
                     )
-                ),
-                ft.Container(height=10),
-                ft.Text("Suggestions", size=14, color=ft.Colors.WHITE54),
-                ft.Row(
-                    wrap=True,
+                )
+
+        filter_menu.visible = visible
+        filter_dismiss_layer.visible = visible # Toggle dismiss layer
+
+        filter_menu.update()
+        if filter_dismiss_layer.page:
+            filter_dismiss_layer.update()
+
+    def apply_filters():
+        active_filters.clear()
+        active_filters.update(pending_filters)
+        toggle_filter_menu(False)
+        update_results_list()
+
+    search_field.on_submit = perform_search
+
+    # -- Views --
+
+    def get_search_view():
+        return ft.Stack(
+            expand=True,
+            controls=[
+                ft.Column(
+                    expand=True,
                     controls=[
-                        ft.Container(
-                            padding=ft.padding.symmetric(horizontal=12, vertical=6),
-                            border_radius=20,
-                            bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.WHITE),
-                            border=ft.border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.WHITE)),
-                            content=ft.Text(text, color=ft.Colors.WHITE70, size=12)
-                        ) for text in SEARCH_SUGGESTIONS
+                        ft.Text(APP_NAME, size=32, weight=ft.FontWeight.W_900, color=ft.Colors.WHITE),
+                        GlassContainer(
+                            opacity=0.15, padding=5,
+                            content=ft.Row(
+                                controls=[
+                                    channel_dropdown,
+                                    ft.Container(width=1, height=30, bgcolor=ft.Colors.WHITE24),
+                                    search_field,
+
+                                    ft.Stack(
+                                        controls=[
+                                            ft.IconButton(
+                                                icon=ft.Icons.FILTER_LIST,
+                                                icon_color=ft.Colors.WHITE,
+                                                tooltip="Filter",
+                                                on_click=lambda e: toggle_filter_menu(not filter_menu.visible)
+                                            ),
+                                            filter_badge_container
+                                        ]
+                                    ),
+
+                                    ft.IconButton(icon=ft.Icons.SEARCH, icon_color=ft.Colors.WHITE, on_click=perform_search)
+                                ]
+                            )
+                        ),
+                        ft.Container(padding=ft.padding.only(left=10), content=result_count_text),
+                        results_column
                     ]
                 ),
-                ft.Container(height=20),
-                ft.Text("Top Results", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                ft.Column(
-                    scroll=ft.ScrollMode.HIDDEN,
-                    expand=True,
-                    spacing=10,
-                    controls=[AppCard(app) for app in APPS_DATA]
-                )
+                # Add dismiss layer behind the menu
+                filter_dismiss_layer,
+                filter_menu
             ]
         )
 
-    # 3. Settings View
     def get_settings_view():
-        def setting_tile(icon, title, subtitle):
-            return GlassContainer(
-                opacity=0.1,
-                padding=15,
-                content=ft.Row([
-                    ft.Icon(icon, color=ft.Colors.WHITE70),
-                    ft.Column([
-                        ft.Text(title, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                        ft.Text(subtitle, size=12, color=ft.Colors.WHITE54)
-                    ], spacing=2, expand=True),
-                    ft.Icon(ft.Icons.CHEVRON_RIGHT, color=ft.Colors.WHITE24)
-                ])
-            )
+        channels_list_col = ft.Column()
+
+        def update_default_channel(e):
+            state.default_channel = e.control.value
+            state.save_settings()
+            refresh_dropdown_options()
+            page.show_snack_bar(ft.SnackBar(content=ft.Text(f"Saved default: {state.default_channel}")))
+
+        def update_shell_prefix(e):
+            state.shell_prefix = e.control.value
+            state.save_settings()
+
+        def update_shell_suffix(e):
+            state.shell_suffix = e.control.value
+            state.save_settings()
+
+        def toggle_channel_state(e):
+            channel = e.control.label
+            is_active = e.control.value
+            state.toggle_channel(channel, is_active)
+            refresh_dropdown_options()
+
+        def request_delete_channel(e):
+            channel_to_delete = e.control.data
+            dlg_ref = [None]
+
+            def on_confirm(e):
+                state.remove_channel(channel_to_delete)
+                refresh_channels_list()
+                refresh_dropdown_options()
+                if dlg_ref[0]: page.close(dlg_ref[0])
+                page.show_snack_bar(ft.SnackBar(content=ft.Text(f"Deleted: {channel_to_delete}")))
+
+            def on_cancel(e):
+                if dlg_ref[0]: page.close(dlg_ref[0])
+
+            dlg = ft.AlertDialog(modal=True, title=ft.Text("Confirm Deletion"), content=ft.Text(f"Remove '{channel_to_delete}'?"), actions=[ft.TextButton("Yes", on_click=on_confirm), ft.TextButton("No", on_click=on_cancel)])
+            dlg_ref[0] = dlg
+            page.open(dlg)
+
+        def refresh_channels_list(update_ui=True):
+            channels_list_col.controls.clear()
+            for ch in state.available_channels:
+                channels_list_col.controls.append(
+                    ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[ft.Checkbox(label=ch, value=(ch in state.active_channels), on_change=toggle_channel_state), ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, icon_color=ft.Colors.RED_400, data=ch, on_click=request_delete_channel)])
+                )
+            if update_ui: channels_list_col.update()
+
+        def add_custom_channel(e):
+            if new_channel_input.value:
+                val = new_channel_input.value.strip()
+                if not val.startswith("nixos-") and not val.startswith("nixpkgs-"): val = f"nixos-{val}"
+                if state.add_channel(val):
+                    refresh_channels_list()
+                    refresh_dropdown_options()
+                    new_channel_input.value = ""
+                    new_channel_input.update()
+                    page.show_snack_bar(ft.SnackBar(content=ft.Text(f"Added channel: {val}")))
+
+        new_channel_input = ft.TextField(hint_text="e.g. 23.11", width=150, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.BLACK12)
+        refresh_channels_list(update_ui=False)
 
         return ft.Column(
             scroll=ft.ScrollMode.HIDDEN,
             controls=[
                 ft.Text("Settings", size=32, weight=ft.FontWeight.W_900, color=ft.Colors.WHITE),
-
-                # Profile Header
-                GlassContainer(
-                    opacity=0.2,
-                    padding=20,
-                    content=ft.Row([
-                        ft.CircleAvatar(
-                            content=ft.Icon(ft.Icons.PERSON),
-                            bgcolor=ft.Colors.PURPLE_200,
-                            radius=30
-                        ),
-                        ft.Column([
-                            ft.Text("Alex Developer", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                            ft.Text("alex@example.com", color=ft.Colors.WHITE70)
-                        ], spacing=2)
-                    ])
-                ),
+                GlassContainer(opacity=0.2, padding=20, content=ft.Row([ft.CircleAvatar(content=ft.Icon(ft.Icons.PERSON), bgcolor=ft.Colors.PURPLE_200, radius=30), ft.Column([ft.Text("User", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE), ft.Text("System Configuration", color=ft.Colors.WHITE70)], spacing=2)])),
                 ft.Container(height=20),
-                ft.Text("General", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE54),
-                setting_tile(ft.Icons.WIFI, "Network Preferences", "Auto-update apps over Wi-Fi only"),
-                setting_tile(ft.Icons.NOTIFICATIONS, "Notifications", "Manage app alerts and sounds"),
-                setting_tile(ft.Icons.SECURITY, "Privacy & Security", "Fingerprint and password settings"),
-                setting_tile(ft.Icons.LANGUAGE, "Language", "English (US)"),
+                ft.Text("Channel Management", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE54),
+                GlassContainer(opacity=0.1, padding=15, content=ft.Column([ft.Text("Available Channels", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE), ft.Container(height=10), ft.Container(height=150, content=ft.Column(scroll=ft.ScrollMode.AUTO, controls=[channels_list_col])), ft.Divider(color=ft.Colors.WHITE24), ft.Row([ft.Text("Add Channel:", size=12), new_channel_input, ft.IconButton(ft.Icons.ADD_CIRCLE, icon_color=ft.Colors.GREEN_400, on_click=add_custom_channel)])])),
+                ft.Container(height=10),
+                ft.Text("Run Configurations", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE54),
+                GlassContainer(opacity=0.1, padding=15, content=ft.Column([
+                    ft.Text("Command Prefix", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                    ft.Text("e.g. gnome-terminal --", size=12, color=ft.Colors.WHITE54),
+                    ft.TextField(value=state.shell_prefix, hint_text="e.g. x-terminal-emulator -e", text_size=12, filled=True, bgcolor=ft.Colors.BLACK12, on_change=update_shell_prefix),
+                    ft.Container(height=5),
+                    ft.Text("Command Suffix", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                    ft.Text("e.g. suffix arguments", size=12, color=ft.Colors.WHITE54),
+                    ft.TextField(value=state.shell_suffix, hint_text="optional suffix", text_size=12, filled=True, bgcolor=ft.Colors.BLACK12, on_change=update_shell_suffix)
+                ])),
+                ft.Container(height=10),
+                ft.Text("Defaults", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE54),
+                GlassContainer(opacity=0.1, padding=15, content=ft.Column([ft.Text("Default Search Channel", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE), ft.Container(height=5), ft.Dropdown(options=[ft.dropdown.Option(c) for c in state.available_channels], value=state.default_channel, on_change=update_default_channel, bgcolor=ft.Colors.GREY_900, border_color=ft.Colors.WHITE24, text_style=ft.TextStyle(color=ft.Colors.WHITE), filled=True)])),
+                ft.Container(height=50),
             ]
         )
 
-    # --- Navigation Logic ---
+    content_area = ft.Container(expand=True, padding=20, content=get_search_view())
 
-    content_area = ft.Container(
-        expand=True,
-        padding=20,
-        content=get_discover_view()
-    )
-
-    # Custom NavBar to avoid 'NavigationDestination' missing error
-    # and to provide a true glassmorphic look
     def build_custom_navbar(on_change):
-        # We hold references to buttons to update their state
         buttons = []
-
-        items = [
-            (ft.Icons.EXPLORE_OUTLINED, ft.Icons.EXPLORE, "Discover"),
-            (ft.Icons.SEARCH_OUTLINED, ft.Icons.SEARCH, "Search"),
-            (ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, "Settings"),
-        ]
-
+        items = [(ft.Icons.SEARCH_OUTLINED, ft.Icons.SEARCH, "Search"), (ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, "Settings")]
         def handle_click(e):
-            # Parse index from data
             idx = e.control.data
-            # Update UI state
             for i, btn in enumerate(buttons):
                 is_selected = (i == idx)
                 btn.icon = items[i][1] if is_selected else items[i][0]
                 btn.icon_color = ft.Colors.WHITE if is_selected else ft.Colors.WHITE54
                 btn.update()
-
-            # Trigger page change
             on_change(idx)
-
         for i, (icon_off, icon_on, label) in enumerate(items):
-            btn = ft.IconButton(
-                icon=icon_on if i == 0 else icon_off, # Default to first selected
-                icon_color=ft.Colors.WHITE if i == 0 else ft.Colors.WHITE54,
-                data=i,
-                on_click=handle_click,
-                tooltip=label
-            )
-            buttons.append(btn)
-
-        return GlassContainer(
-            opacity=0.15,
-            border_radius=0, # Flat bottom
-            blur_sigma=15,
-            padding=10,
-            margin=0,
-            content=ft.Row(
-                controls=buttons,
-                alignment=ft.MainAxisAlignment.SPACE_AROUND
-            )
-        )
+            buttons.append(ft.IconButton(icon=icon_on if i == 0 else icon_off, icon_color=ft.Colors.WHITE if i == 0 else ft.Colors.WHITE54, data=i, on_click=handle_click, tooltip=label, style=ft.ButtonStyle(shape=ft.CircleBorder(), padding=10)))
+        return GlassContainer(opacity=0.15, border_radius=0, blur_sigma=15, padding=15, margin=0, content=ft.Row(controls=buttons, alignment=ft.MainAxisAlignment.SPACE_EVENLY))
 
     def on_nav_change(idx):
-        if idx == 0:
-            content_area.content = get_discover_view()
-        elif idx == 1:
-            content_area.content = get_search_view()
-        elif idx == 2:
-            content_area.content = get_settings_view()
+        if idx == 0: content_area.content = get_search_view()
+        elif idx == 1: content_area.content = get_settings_view()
         content_area.update()
 
     nav_bar = build_custom_navbar(on_nav_change)
+    background = ft.Container(expand=True, gradient=ft.LinearGradient(begin=ft.alignment.top_left, end=ft.alignment.bottom_right, colors=["#1a1b26", "#24283b", "#414868"]))
+    decorations = ft.Stack(controls=[ft.Container(width=300, height=300, bgcolor=ft.Colors.CYAN_900, border_radius=150, top=-100, right=-50, blur=ft.Blur(100, 100, ft.BlurTileMode.MIRROR), opacity=0.3), ft.Container(width=200, height=200, bgcolor=ft.Colors.PURPLE_900, border_radius=100, bottom=100, left=-50, blur=ft.Blur(80, 80, ft.BlurTileMode.MIRROR), opacity=0.3)])
+    page.add(ft.Stack(expand=True, controls=[background, decorations, ft.Column(expand=True, spacing=0, controls=[content_area, nav_bar])]))
 
-    # --- Layout Assembly ---
-
-    background = ft.Container(
-        expand=True,
-        gradient=ft.LinearGradient(
-            begin=ft.alignment.top_left,
-            end=ft.alignment.bottom_right,
-            colors=[
-                "#2E1437", # Deep purple
-                "#240C33",
-                "#0F172A", # Dark blue/slate
-            ]
-        )
-    )
-
-    decorations = ft.Stack(
-        controls=[
-            ft.Container(
-                width=300, height=300,
-                bgcolor=ft.Colors.PURPLE_600,
-                border_radius=150,
-                top=-100, right=-50,
-                blur=ft.Blur(100, 100, ft.BlurTileMode.MIRROR),
-                opacity=0.4
-            ),
-            ft.Container(
-                width=200, height=200,
-                bgcolor=ft.Colors.BLUE_600,
-                border_radius=100,
-                bottom=100, left=-50,
-                blur=ft.Blur(80, 80, ft.BlurTileMode.MIRROR),
-                opacity=0.4
-            ),
-        ]
-    )
-
-    main_layout = ft.Column(
-        expand=True,
-        spacing=0,
-        controls=[
-            content_area,
-            nav_bar
-        ]
-    )
-
-    page.add(
-        ft.Stack(
-            expand=True,
-            controls=[
-                background,
-                decorations,
-                main_layout
-            ]
-        )
-    )
-
-ft.app(target=main)
+if __name__ == "__main__":
+    ft.app(target=main)
