@@ -36,16 +36,12 @@
                   ps: with ps; [
                     flet
                     flet-desktop
-                    # Add other python deps below as needed
+                    
                   ]
                 ))
               ];
 
-              # Runtime libraries required by Flet/Flutter on Linux
-              # We export these to LD_LIBRARY_PATH so the Flet binary can find them at runtime.
-              shellHook =
-                let
-                  libPath = pkgs.lib.makeLibraryPath (
+              env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (
                     with pkgs;
                     [
                       gtk3
@@ -59,9 +55,11 @@
                       wayland
                     ]
                   );
-                in
+
+              # Runtime libraries required by Flet/Flutter on Linux
+              # We export these to LD_LIBRARY_PATH so the Flet binary can find them at runtime.
+              shellHook =
                 ''
-                  export LD_LIBRARY_PATH="${libPath}:$LD_LIBRARY_PATH"
                   echo "🚀 Flet Dev Shell Activated!"
                   echo "Python: $(python --version)"
                   #echo "Flet: $(python -c 'import flet; print(flet.version.version)')"
