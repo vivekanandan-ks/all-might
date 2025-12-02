@@ -18,6 +18,9 @@ class AppState:
     def __init__(self):
         self.default_channel = "nixos-24.11"
         self.font_size = 14  # Default font size
+        self.confirm_timer = 5 # Default countdown for confirmation dialog
+        self.undo_timer = 5    # Default countdown for undo toast
+        self.nav_badge_size = 20 # Default size for nav badges
 
         # Separate configs for Single App vs Cart
         self.shell_single_prefix = "x-terminal-emulator -e"
@@ -42,6 +45,12 @@ class AppState:
                     data = json.load(f)
                     self.default_channel = data.get("default_channel", self.default_channel)
                     self.font_size = data.get("font_size", 14)
+                    # Fallback to old countdown_timer if new keys don't exist
+                    legacy_timer = data.get("countdown_timer", 5)
+                    self.confirm_timer = data.get("confirm_timer", legacy_timer)
+                    self.undo_timer = data.get("undo_timer", legacy_timer)
+
+                    self.nav_badge_size = data.get("nav_badge_size", 20)
                     self.available_channels = data.get("available_channels", self.available_channels)
                     self.active_channels = data.get("active_channels", self.active_channels)
 
@@ -63,6 +72,9 @@ class AppState:
             data = {
                 "default_channel": self.default_channel,
                 "font_size": self.font_size,
+                "confirm_timer": self.confirm_timer,
+                "undo_timer": self.undo_timer,
+                "nav_badge_size": self.nav_badge_size,
                 "available_channels": self.available_channels,
                 "active_channels": self.active_channels,
                 "shell_single_prefix": self.shell_single_prefix,
@@ -504,6 +516,7 @@ class NixPackageCard(GlassContainer):
             ]
         )
         super().__init__(content=content, padding=12, opacity=0.15)
+        self.update_copy_tooltip() # Set initial tooltip
 
     def refresh_lists_menu(self):
         containing_lists = state.get_containing_lists(self.pkg, self.selected_channel)
@@ -587,6 +600,7 @@ class NixPackageCard(GlassContainer):
             self.channel_text.update()
             self.update_cart_btn_state()
             self.refresh_lists_menu() # Refresh lists state for new channel/version
+            self.update_copy_tooltip() # Update tooltip with new version
         except Exception as ex:
             self.channel_text.value = "Error"
             self.channel_text.update()
@@ -601,6 +615,7 @@ class NixPackageCard(GlassContainer):
             self.try_btn_icon.name = ft.Icons.TERMINAL
         self.try_btn_text.update()
         self.try_btn_icon.update()
+        self.update_copy_tooltip() # Update tooltip on mode change
 
     def _generate_nix_command(self):
         target = f"nixpkgs/{self.selected_channel}#{self.pname}"
@@ -613,6 +628,11 @@ class NixPackageCard(GlassContainer):
             # STRICTLY prefix + nix shell pkg + suffix (No extra logic)
             nix_cmd = f"nix shell {target}"
             return f"{prefix} {nix_cmd} {suffix}".strip()
+
+    def update_copy_tooltip(self):
+        self.copy_btn.tooltip = self._generate_nix_command()
+        if self.copy_btn.page:
+            self.copy_btn.update()
 
     def copy_command(self, e):
         cmd = self._generate_nix_command()
@@ -688,6 +708,8 @@ def main(page: ft.Page):
 
     def show_undo_toast(message, on_undo):
         # Create UndoToast component
+        undo_duration = state.undo_timer # Use setting
+
         def on_timeout():
             toast_overlay_container.visible = False
             page.update()
@@ -697,7 +719,7 @@ def main(page: ft.Page):
             toast_overlay_container.visible = False
             page.update()
 
-        undo_control = UndoToast(message, on_undo=wrapped_undo, on_timeout=on_timeout)
+        undo_control = UndoToast(message, on_undo=wrapped_undo, duration_seconds=undo_duration, on_timeout=on_timeout)
         toast_overlay_container.content = undo_control
         toast_overlay_container.visible = True
         page.update()
@@ -709,8 +731,10 @@ def main(page: ft.Page):
 
     # --- Helper: Destructive Action Dialog with Timer ---
     def show_destructive_dialog(title, content_text, on_confirm):
+        duration = state.confirm_timer # Use setting
+
         # Start colorless (Grey)
-        confirm_btn = ft.ElevatedButton("Yes (5s)", bgcolor=ft.Colors.GREY_700, color=ft.Colors.WHITE70, disabled=True)
+        confirm_btn = ft.ElevatedButton(f"Yes ({duration}s)", bgcolor=ft.Colors.GREY_700, color=ft.Colors.WHITE70, disabled=True)
         cancel_btn = ft.OutlinedButton("No")
 
         dlg = ft.AlertDialog(
@@ -730,7 +754,7 @@ def main(page: ft.Page):
         cancel_btn.on_click = close_dlg
 
         def timer_logic():
-            for i in range(5, 0, -1):
+            for i in range(duration, 0, -1):
                 # Ensure dialog is still open
                 if not dlg.open: return
                 confirm_btn.text = f"Yes ({i}s)"
@@ -761,17 +785,21 @@ def main(page: ft.Page):
     cart_header_clear_btn = ft.IconButton(ft.Icons.DELETE_SWEEP, tooltip="Clear Cart", icon_color=ft.Colors.RED_400)
 
     # Unified Cart Shell Button (Similar to App UI)
+    cart_header_shell_btn_container = ft.Container(
+        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text("Try Cart in Shell", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE, size=12)]),
+        on_click=lambda e: run_cart_shell(e),
+        ink=True
+    )
+
+    cart_header_copy_btn = ft.IconButton(ft.Icons.CONTENT_COPY, icon_color=ft.Colors.WHITE70, tooltip="Copy Command", on_click=lambda e: copy_cart_command(e), icon_size=16, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=0)))
+
     cart_header_shell_btn = ft.Container(
         bgcolor=ft.Colors.BLUE_600, border_radius=8,
         content=ft.Row(spacing=0, controls=[
-            ft.Container(
-                padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text("Try Cart in Shell", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE, size=12)]),
-                on_click=lambda e: run_cart_shell(e),
-                ink=True
-            ),
+            cart_header_shell_btn_container,
             ft.Container(width=1, height=20, bgcolor=ft.Colors.WHITE24),
-            ft.IconButton(ft.Icons.CONTENT_COPY, icon_color=ft.Colors.WHITE70, tooltip="Copy Command", on_click=lambda e: copy_cart_command(e), icon_size=16, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=0)))
+            cart_header_copy_btn
         ])
     )
 
@@ -801,14 +829,17 @@ def main(page: ft.Page):
     filter_badge_container = ft.Container(content=filter_badge_count, bgcolor=ft.Colors.RED_500, width=16, height=16, border_radius=8, alignment=ft.alignment.center, visible=False, top=0, right=0)
 
     # FIXED CART BADGE: Ensure stack has room by placing it inside a container with padding/margin logic if needed
-    cart_badge_count = ft.Text(str(len(state.cart_items)), size=10, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER)
+    # Size depends on settings
+    badge_size_val = state.nav_badge_size
+
+    cart_badge_count = ft.Text(str(len(state.cart_items)), size=max(8, badge_size_val/2), color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER)
     cart_badge_container = ft.Container(
         content=cart_badge_count,
         bgcolor=ft.Colors.RED_500,
-        width=20, height=20, border_radius=10, # Increased size
+        width=badge_size_val, height=badge_size_val, border_radius=badge_size_val/2,
         alignment=ft.alignment.center,
         visible=len(state.cart_items) > 0,
-        top=2, right=2 # Adjusted position
+        top=2, right=2
     )
 
     filter_dismiss_layer = ft.Container(expand=True, visible=False, on_click=lambda e: toggle_filter_menu(False), bgcolor=ft.Colors.with_opacity(0.01, ft.Colors.BLACK))
@@ -819,6 +850,45 @@ def main(page: ft.Page):
     selected_list_name = None
     lists_main_col = ft.Column(scroll=ft.ScrollMode.HIDDEN, expand=True)
     list_detail_col = ft.Column(scroll=ft.ScrollMode.HIDDEN, expand=True)
+
+    # --- New Lists Badge ---
+    lists_badge_count = ft.Text(str(len(state.saved_lists)), size=max(8, badge_size_val/2), color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER)
+    lists_badge_container = ft.Container(
+        content=lists_badge_count,
+        bgcolor=ft.Colors.RED_500,
+        width=badge_size_val, height=badge_size_val, border_radius=badge_size_val/2,
+        alignment=ft.alignment.center,
+        visible=len(state.saved_lists) > 0,
+        top=2, right=2
+    )
+
+    def update_lists_badge():
+        count = len(state.saved_lists)
+        lists_badge_count.value = str(count)
+        if lists_badge_container.page:
+            lists_badge_container.visible = count > 0
+            lists_badge_container.update()
+
+    def update_badges_style():
+        # Read current size from state
+        sz = state.nav_badge_size
+        radius = sz / 2
+        font_sz = max(8, sz / 2) # Heuristic
+
+        # Update Cart Badge
+        cart_badge_container.width = sz
+        cart_badge_container.height = sz
+        cart_badge_container.border_radius = radius
+        cart_badge_count.size = font_sz
+
+        # Update Lists Badge
+        lists_badge_container.width = sz
+        lists_badge_container.height = sz
+        lists_badge_container.border_radius = radius
+        lists_badge_count.size = font_sz
+
+        if cart_badge_container.page: cart_badge_container.update()
+        if lists_badge_container.page: lists_badge_container.update()
 
     # --- Cart & List Logic ---
 
@@ -890,6 +960,7 @@ def main(page: ft.Page):
                 show_toast("Please enter a name")
                 return
             state.save_list(name, list(state.cart_items))
+            update_lists_badge() # Update badge on save
             show_toast(f"Saved list: {name}")
             page.close(dlg_ref[0])
             # Refresh card list menus in current view if any
@@ -948,6 +1019,14 @@ def main(page: ft.Page):
 
         # Update Header Logic
         cart_header_title.value = f"Your Cart ({total_items} items)"
+
+        # Update copy tooltip
+        if total_items > 0:
+             cmd = _build_shell_command_for_items(state.cart_items)
+             cart_header_copy_btn.tooltip = cmd
+        else:
+             cart_header_copy_btn.tooltip = "Cart is empty"
+
         cart_header_save_btn.disabled = (total_items == 0)
         cart_header_clear_btn.disabled = (total_items == 0)
 
@@ -1068,6 +1147,7 @@ def main(page: ft.Page):
         def do_delete(e):
             nonlocal selected_list_name # FIXED: Moved to top
             state.delete_list(name)
+            update_lists_badge() # Update badge on delete
             refresh_lists_main_view(update_ui=True)
 
             # If we are deleting the list we are currently viewing, go back to index
@@ -1078,6 +1158,7 @@ def main(page: ft.Page):
 
             def on_undo():
                 state.restore_list(name, backup_items)
+                update_lists_badge() # Update badge on undo
                 refresh_lists_main_view(update_ui=True)
                 # Note: We don't auto-navigate back to the restored list to avoid jarring UI changes
 
@@ -1124,8 +1205,6 @@ def main(page: ft.Page):
                 list_detail_col.controls.append(NixPackageCard(pkg_data, page, saved_channel, on_cart_change=on_global_cart_change, is_cart_view=True, show_toast_callback=show_toast))
 
         if update_ui and list_detail_col.page: list_detail_col.update()
-
-    # -- Views --
 
     def get_search_view():
         return ft.Stack(
@@ -1175,19 +1254,32 @@ def main(page: ft.Page):
             item_count = len(state.saved_lists.get(selected_list_name, []))
 
             # Unified List Shell Button (Similar to Cart/App UI)
+            list_header_shell_btn_container = ft.Container(
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text(f"Try List in Shell", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE, size=12)]),
+                on_click=lambda e: run_list_shell(e),
+                ink=True
+            )
+
+            list_header_copy_btn = ft.IconButton(ft.Icons.CONTENT_COPY, icon_color=ft.Colors.WHITE70, tooltip="Copy List Command", on_click=lambda e: copy_list_command(e), icon_size=16, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=0)))
+
             list_header_shell_btn = ft.Container(
                 bgcolor=ft.Colors.BLUE_600, border_radius=8,
                 content=ft.Row(spacing=0, controls=[
-                    ft.Container(
-                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                        content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text(f"Try List in Shell", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE, size=12)]),
-                        on_click=lambda e: run_list_shell(e),
-                        ink=True
-                    ),
+                    list_header_shell_btn_container,
                     ft.Container(width=1, height=20, bgcolor=ft.Colors.WHITE24),
-                    ft.IconButton(ft.Icons.CONTENT_COPY, icon_color=ft.Colors.WHITE70, tooltip="Copy List Command", on_click=lambda e: copy_list_command(e), icon_size=16, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=0)))
+                    list_header_copy_btn
                 ])
             )
+
+            # Update tooltip logic for List Copy
+            if item_count > 0:
+                 items = state.saved_lists.get(selected_list_name, [])
+                 cmd = _build_shell_command_for_items(items)
+                 list_header_copy_btn.tooltip = cmd
+            else:
+                 list_header_copy_btn.tooltip = "List is empty"
+
 
             # Red Delete List Button
             delete_list_btn = ft.ElevatedButton(
@@ -1241,6 +1333,34 @@ def main(page: ft.Page):
             except ValueError:
                 pass # Ignore invalid input
 
+        def update_confirm_timer(e):
+            try:
+                val = int(e.control.value)
+                state.confirm_timer = val
+                state.save_settings()
+                show_toast(f"Confirm timer set to {val}s")
+            except ValueError:
+                pass
+
+        def update_undo_timer(e):
+            try:
+                val = int(e.control.value)
+                state.undo_timer = val
+                state.save_settings()
+                show_toast(f"Undo timer set to {val}s")
+            except ValueError:
+                pass
+
+        def update_badge_size(e):
+            try:
+                val = int(e.control.value)
+                state.nav_badge_size = val
+                state.save_settings()
+                update_badges_style()
+                show_toast(f"Badge size set to {val}px")
+            except ValueError:
+                pass
+
         def update_shell_single_prefix(e): state.shell_single_prefix = e.control.value; state.save_settings()
         def update_shell_single_suffix(e): state.shell_single_suffix = e.control.value; state.save_settings()
         def update_shell_cart_prefix(e): state.shell_cart_prefix = e.control.value; state.save_settings()
@@ -1255,26 +1375,23 @@ def main(page: ft.Page):
         def refresh_channels_list(update_ui=True):
             channels_row.controls.clear()
             # Fixed width to fit approx 3 cols on 400px width.
-            item_width = 160 # Increased width
+            item_width = 210 # Increased width
 
             for ch in state.available_channels:
                 channels_row.controls.append(
                     ft.Container(
-                        bgcolor=ft.Colors.WHITE10, padding=5, border_radius=5, width=item_width,
+                        bgcolor=ft.Colors.WHITE10, padding=ft.padding.only(left=5, right=5, top=5, bottom=5), border_radius=5, width=item_width,
                         content=ft.Row(
-                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                            spacing=0,
+                            alignment=ft.MainAxisAlignment.START,
+                            spacing=2,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             controls=[
+                                ft.Checkbox(value=(ch in state.active_channels), on_change=lambda e, c=ch: state.toggle_channel(c, e.control.value) or refresh_dropdown_options()),
                                 ft.Container(
-                                    content=ft.Checkbox(
-                                        label=ch,
-                                        value=(ch in state.active_channels),
-                                        on_change=toggle_channel_state,
-                                        label_style=ft.TextStyle(size=10)
-                                    ),
+                                    content=ft.Text(ch, size=12, no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS, weight=ft.FontWeight.BOLD),
                                     expand=True
                                 ),
-                                ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, icon_color=ft.Colors.RED_400, icon_size=16, data=ch, on_click=request_delete_channel, width=30)
+                                ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, icon_color=ft.Colors.RED_400, icon_size=18, data=ch, on_click=request_delete_channel, width=24, style=ft.ButtonStyle(padding=0))
                             ]
                         )
                     )
@@ -1289,6 +1406,11 @@ def main(page: ft.Page):
         new_channel_input = ft.TextField(hint_text="e.g. 23.11", width=150, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.BLACK12)
         font_size_input = ft.TextField(value=str(state.font_size), hint_text="Default: 14", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.BLACK12, on_submit=update_font_size, on_blur=update_font_size)
 
+        confirm_timer_input = ft.TextField(value=str(state.confirm_timer), hint_text="Default: 5", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.BLACK12, on_submit=update_confirm_timer, on_blur=update_confirm_timer)
+        undo_timer_input = ft.TextField(value=str(state.undo_timer), hint_text="Default: 5", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.BLACK12, on_submit=update_undo_timer, on_blur=update_undo_timer)
+
+        badge_size_input = ft.TextField(value=str(state.nav_badge_size), hint_text="Default: 20", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.BLACK12, on_submit=update_badge_size, on_blur=update_badge_size)
+
         refresh_channels_list(update_ui=False)
         return ft.Column(
             scroll=ft.ScrollMode.HIDDEN,
@@ -1299,10 +1421,27 @@ def main(page: ft.Page):
 
                 # --- UI Settings ---
                 ft.Text("Appearance", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE54),
-                GlassContainer(opacity=0.1, padding=15, content=ft.Row([
-                    ft.Text("Base Font Size:", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
-                    font_size_input
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)),
+                GlassContainer(opacity=0.1, padding=15, content=ft.Column([
+                    ft.Row([
+                        ft.Text("Base Font Size:", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                        font_size_input
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Container(height=10),
+                    ft.Row([
+                        ft.Text("Confirm Dialog Timer (s):", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                        confirm_timer_input
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                     ft.Container(height=10),
+                    ft.Row([
+                        ft.Text("Undo Toast Timer (s):", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                        undo_timer_input
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Container(height=10),
+                    ft.Row([
+                        ft.Text("Nav Badge Size:", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                        badge_size_input
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ])),
                 ft.Container(height=10),
 
                 ft.Text("Channel Management", size=16, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE54),
@@ -1410,6 +1549,10 @@ def main(page: ft.Page):
             if i == 1: # Cart
                 # Stack wrapper for badge
                 wrapper = ft.Stack([btn, cart_badge_container])
+                final_controls.append(wrapper)
+                nav_button_controls.append(wrapper) # Store for updates
+            elif i == 2: # Lists (NEW)
+                wrapper = ft.Stack([btn, lists_badge_container])
                 final_controls.append(wrapper)
                 nav_button_controls.append(wrapper) # Store for updates
             else:
