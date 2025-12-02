@@ -1,4 +1,4 @@
-# About this project: all-might
+  # About this project: all-might
 This project is an attempt to bring a user friendly and powerful GUI for nixpkgs.
 Project planned to work Cross platform for All platforms where Nix works like Most Linux distros, Mac and Android(possibly with the AVF efforts from Android 16 onwards?).
 
