@@ -774,6 +774,10 @@ def main(page: ft.Page):
     active_filters = set()
     pending_filters = set()
 
+    # --- UI Persistence State ---
+    # Keeps track of which settings tile is open to restore it after theme reload
+    settings_ui_state = {"expanded_tile": None}
+
     # --- Global Menu Logic ---
     # We use a global stack layer for the menu to ensure it's always on top and handles dismissal correctly.
 
@@ -1672,6 +1676,11 @@ def main(page: ft.Page):
             except ValueError:
                 pass
 
+        # Helper to track expanded state
+        def on_tile_change(e):
+            if e.data == "true":
+                settings_ui_state["expanded_tile"] = e.control.data
+
         # Theme Handlers
         def update_theme_mode(e):
              selected_set = e.control.selected
@@ -1680,10 +1689,12 @@ def main(page: ft.Page):
              state.theme_mode = val
              state.save_settings()
 
-             page.theme = ft.Theme(color_scheme_seed=color_val)
+             page.theme_mode = ft.ThemeMode.DARK if val == "dark" else (ft.ThemeMode.LIGHT if val == "light" else ft.ThemeMode.SYSTEM)
+             # Ensure we keep the current color seed
+             page.theme = ft.Theme(color_scheme_seed=state.theme_color)
              page.update()
              show_toast(f"Theme mode set to {val}")
-             # Re-render settings to apply colors
+             # Re-render settings to apply colors and keep state
              on_nav_change(4)
 
         def update_theme_color(e):
@@ -1815,6 +1826,9 @@ def main(page: ft.Page):
                     collapsed_text_color="onSurface",
                     text_color="onSurface",
                     icon_color=ft.Colors.BLUE_200,
+                    data="profile",
+                    initially_expanded=(settings_ui_state["expanded_tile"] == "profile"),
+                    on_change=on_tile_change,
                     controls=[
                          GlassContainer(opacity=0.1, padding=15, content=ft.Row([
                             ft.Text("Username:", weight=ft.FontWeight.BOLD, color="onSurface"),
@@ -1829,6 +1843,9 @@ def main(page: ft.Page):
                     collapsed_text_color="onSurface",
                     text_color="onSurface",
                     icon_color=ft.Colors.PINK_200,
+                    data="appearance",
+                    initially_expanded=(settings_ui_state["expanded_tile"] == "appearance"),
+                    on_change=on_tile_change,
                     controls=[
                         GlassContainer(opacity=0.1, padding=15, content=ft.Column([
                             ft.Text("Theme Mode", weight=ft.FontWeight.BOLD, color="onSurface"),
@@ -1866,6 +1883,9 @@ def main(page: ft.Page):
                     collapsed_text_color="onSurface",
                     text_color="onSurface",
                     icon_color=ft.Colors.ORANGE_200,
+                    data="channels",
+                    initially_expanded=(settings_ui_state["expanded_tile"] == "channels"),
+                    on_change=on_tile_change,
                     controls=[
                         GlassContainer(opacity=0.1, padding=15, content=ft.Column([
                             ft.Text("Default Search Channel", weight=ft.FontWeight.BOLD, color="onSurface"),
@@ -1887,6 +1907,9 @@ def main(page: ft.Page):
                     collapsed_text_color="onSurface",
                     text_color="onSurface",
                     icon_color=ft.Colors.GREEN_200,
+                    data="run_config",
+                    initially_expanded=(settings_ui_state["expanded_tile"] == "run_config"),
+                    on_change=on_tile_change,
                     controls=[
                         GlassContainer(opacity=0.1, padding=15, content=ft.Column([
                             ft.Text("Run without installing cmd config", weight=ft.FontWeight.BOLD, color="onSurface"),
