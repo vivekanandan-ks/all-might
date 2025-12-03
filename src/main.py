@@ -470,7 +470,8 @@ class NixPackageCard(GlassContainer):
             content=ft.Row(spacing=6, controls=[self.try_btn_icon, self.try_btn_text], alignment=ft.MainAxisAlignment.CENTER),
             on_click=lambda e: self.run_action(),
             bgcolor=ft.Colors.TRANSPARENT,
-            ink=True
+            ink=True,
+            tooltip="" # Will be updated dynamically
         )
 
         self.copy_btn = ft.IconButton(
@@ -714,30 +715,36 @@ class NixPackageCard(GlassContainer):
         self.try_btn_icon.update()
         self.update_copy_tooltip() # Update tooltip on mode change
 
-    def _generate_nix_command(self):
+    def _generate_nix_command(self, with_wrapper=True):
         target = f"nixpkgs/{self.selected_channel}#{self.pname}"
+        core_cmd = ""
 
         if self.run_mode == "direct":
-            return f"nix run {target}"
+            core_cmd = f"nix run {target}"
         elif self.run_mode == "shell":
+            core_cmd = f"nix shell {target}"
+
+        # Apply wrapper to both modes if requested
+        if with_wrapper:
             prefix = state.shell_single_prefix.strip()
             suffix = state.shell_single_suffix.strip()
-            # STRICTLY prefix + nix shell pkg + suffix (No extra logic)
-            nix_cmd = f"nix shell {target}"
-            return f"{prefix} {nix_cmd} {suffix}".strip()
+            return f"{prefix} {core_cmd} {suffix}".strip()
+
+        return core_cmd
 
     def update_copy_tooltip(self):
-        self.copy_btn.tooltip = self._generate_nix_command()
-        if self.copy_btn.page:
-            self.copy_btn.update()
+        self.copy_btn.tooltip = self._generate_nix_command(with_wrapper=False)
+        self.try_btn.tooltip = self._generate_nix_command(with_wrapper=True)
+        if self.copy_btn.page: self.copy_btn.update()
+        if self.try_btn.page: self.try_btn.update()
 
     def copy_command(self, e):
-        cmd = self._generate_nix_command()
+        cmd = self._generate_nix_command(with_wrapper=False)
         self.page_ref.set_clipboard(cmd)
         if self.show_toast: self.show_toast(f"Copied: {cmd}")
 
     def run_action(self):
-        display_cmd = self._generate_nix_command()
+        display_cmd = self._generate_nix_command(with_wrapper=True)
         cmd_list = shlex.split(display_cmd)
 
         output_text = ft.Text("Launching process...", font_family="monospace", size=12)
@@ -1115,7 +1122,7 @@ def main(page: ft.Page):
 
     # --- Cart & List Logic ---
 
-    def _build_shell_command_for_items(items):
+    def _build_shell_command_for_items(items, with_wrapper=True):
         prefix = state.shell_cart_prefix.strip()
         suffix = state.shell_cart_suffix.strip()
 
@@ -1127,11 +1134,15 @@ def main(page: ft.Page):
 
         nix_args_str = " ".join(nix_pkgs_args)
         nix_cmd = f"nix shell {nix_args_str}"
-        return f"{prefix} {nix_cmd} {suffix}".strip()
+
+        if with_wrapper:
+            return f"{prefix} {nix_cmd} {suffix}".strip()
+        else:
+            return nix_cmd
 
     def run_cart_shell(e):
         if not state.cart_items: return
-        display_cmd = _build_shell_command_for_items(state.cart_items)
+        display_cmd = _build_shell_command_for_items(state.cart_items, with_wrapper=True)
         _launch_shell_dialog(display_cmd, "Cart Shell")
 
     def run_list_shell(e):
@@ -1146,7 +1157,7 @@ def main(page: ft.Page):
             title = f"List: {selected_list_name}"
 
         if not items: return
-        display_cmd = _build_shell_command_for_items(items)
+        display_cmd = _build_shell_command_for_items(items, with_wrapper=True)
         _launch_shell_dialog(display_cmd, title)
 
     def _launch_shell_dialog(display_cmd, title):
@@ -1166,7 +1177,7 @@ def main(page: ft.Page):
 
     def copy_cart_command(e):
         if not state.cart_items: return
-        cmd = _build_shell_command_for_items(state.cart_items)
+        cmd = _build_shell_command_for_items(state.cart_items, with_wrapper=False)
         page.set_clipboard(cmd)
         show_toast(f"Copied Cart Command")
 
@@ -1178,7 +1189,7 @@ def main(page: ft.Page):
             items = state.saved_lists[selected_list_name]
 
         if not items: return
-        cmd = _build_shell_command_for_items(items)
+        cmd = _build_shell_command_for_items(items, with_wrapper=False)
         page.set_clipboard(cmd)
         show_toast(f"Copied List Command")
 
@@ -1258,10 +1269,13 @@ def main(page: ft.Page):
 
         # Update copy tooltip
         if total_items > 0:
-             cmd = _build_shell_command_for_items(state.cart_items)
-             cart_header_copy_btn.tooltip = cmd
+             cmd_clean = _build_shell_command_for_items(state.cart_items, with_wrapper=False)
+             cmd_full = _build_shell_command_for_items(state.cart_items, with_wrapper=True)
+             cart_header_copy_btn.tooltip = cmd_clean
+             cart_header_shell_btn_container.tooltip = cmd_full
         else:
              cart_header_copy_btn.tooltip = "Cart is empty"
+             cart_header_shell_btn_container.tooltip = ""
 
         cart_header_save_btn.disabled = (total_items == 0)
         cart_header_clear_btn.disabled = (total_items == 0)
@@ -1584,10 +1598,13 @@ def main(page: ft.Page):
 
             # Update tooltip logic for List Copy
             if item_count > 0:
-                 cmd = _build_shell_command_for_items(items)
-                 list_header_copy_btn.tooltip = cmd
+                 cmd_clean = _build_shell_command_for_items(items, with_wrapper=False)
+                 cmd_full = _build_shell_command_for_items(items, with_wrapper=True)
+                 list_header_copy_btn.tooltip = cmd_clean
+                 list_header_shell_btn_container.tooltip = cmd_full
             else:
                  list_header_copy_btn.tooltip = "List is empty"
+                 list_header_shell_btn_container.tooltip = ""
 
             # Control Row: Delete Button (Only for custom lists)
             controls_row_items = [list_header_shell_btn]
