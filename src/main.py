@@ -1694,8 +1694,11 @@ def main(page: ft.Page):
              page.theme = ft.Theme(color_scheme_seed=state.theme_color)
              page.update()
              show_toast(f"Theme mode set to {val}")
+
              # Re-render settings to apply colors and keep state
              on_nav_change(4)
+             # Force navbar color update
+             if navbar_ref[0]: navbar_ref[0]()
 
         def update_theme_color(e):
              color_val = e.control.data
@@ -1705,8 +1708,11 @@ def main(page: ft.Page):
              page.theme = ft.Theme(color_scheme_seed=color_val)
              page.update()
              show_toast(f"Theme color set to {color_val}")
+
              # Re-render settings to apply colors
              on_nav_change(4)
+             # Force navbar color update
+             if navbar_ref[0]: navbar_ref[0]()
 
 
         def update_shell_single_prefix(e): state.shell_single_prefix = e.control.value; state.save_settings(); refresh_cmd_previews()
@@ -1933,9 +1939,13 @@ def main(page: ft.Page):
 
     content_area = ft.Container(expand=True, padding=20, content=get_home_view()) # Default to Home
 
+    # Use a mutable list to hold the reference to refresh_navbar function
+    navbar_ref = [None]
+
     def build_custom_navbar(on_change):
         # We need a reference to all button containers to update their state
         nav_button_controls = []
+        current_nav_idx = [0] # Mutable to track current selection
 
         items = [
             (ft.Icons.HOME_OUTLINED, ft.Icons.HOME, "Home"),
@@ -1961,6 +1971,7 @@ def main(page: ft.Page):
 
                 # Use theme aware colors for nav bar
                 active_col = "onSurface"
+                # This fetches the *current* base color (white for dark mode, black for light mode)
                 inactive_col = ft.Colors.with_opacity(0.5, state.get_base_color())
 
                 icon_control.name = items[i][1] if is_selected else items[i][0]
@@ -1971,8 +1982,15 @@ def main(page: ft.Page):
                 if control.page:
                     control.update()
 
+        def refresh_navbar():
+            update_active_state(current_nav_idx[0])
+
+        # Expose this function to main scope via reference
+        navbar_ref[0] = refresh_navbar
+
         def handle_click(e):
             idx = e.control.data
+            current_nav_idx[0] = idx # Update current selection
             update_active_state(idx)
             on_change(idx)
 
