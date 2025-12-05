@@ -958,7 +958,7 @@ def main(page: ft.Page):
 
     # --- UI Persistence State ---
     # Keeps track of which settings tile is open to restore it after theme reload
-    settings_ui_state = {"expanded_tile": None}
+    settings_ui_state = {"expanded_tile": None, "selected_category": "appearance"}
 
     # --- Global Menu Logic ---
     # We use a global stack layer for the menu to ensure it's always on top and handles dismissal correctly.
@@ -1686,52 +1686,6 @@ def main(page: ft.Page):
         if update_ui and list_detail_col.page: list_detail_col.update()
 
     def get_home_view():
-        # -- Recent Activity Section --
-        recent_activity_row = ft.Row(scroll=ft.ScrollMode.HIDDEN, spacing=10)
-
-        def show_pkg_details_dialog(item):
-            # Create a simplified dialog showing the package card
-            pkg = item['package']
-            channel = item['channel']
-
-            # Using NixPackageCard in a dialog might be large, but it's consistent
-            # We need to pass None for on_menu_open since it's not in a list context essentially
-            card = NixPackageCard(pkg, page, channel, show_toast_callback=show_toast)
-
-            dlg = ft.AlertDialog(
-                content=ft.Container(width=400, content=card, padding=0),
-                content_padding=0,
-                bgcolor=ft.Colors.TRANSPARENT, # Let card handle bg
-            )
-            page.open(dlg)
-
-        if not state.recent_activity:
-            pass # Don't show anything if empty, as requested to be clean
-        else:
-            for item in state.recent_activity:
-                pkg = item['package']
-                pname = pkg.get("package_pname", "Unknown")
-
-                # Small card for recent item
-                recent_card = GlassContainer(
-                    width=140, height=80, padding=10, opacity=0.1,
-                    on_click=lambda e, i=item: show_pkg_details_dialog(i),
-                    border_radius=state.get_radius('card'),
-                    content=ft.Column(
-                        alignment=ft.MainAxisAlignment.CENTER,
-                        spacing=2,
-                        controls=[
-                            ft.Icon(ft.Icons.HISTORY, size=16, color=ft.Colors.BLUE_200),
-                            ft.Text(pname, weight=ft.FontWeight.BOLD, size=12, no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS, text_align=ft.TextAlign.CENTER),
-                            ft.Text(item['channel'], size=9, color="onSurfaceVariant", no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS)
-                        ]
-                    )
-                )
-                recent_activity_row.controls.append(recent_card)
-
-        # Removed clear history button and title row to keep it minimal as requested in cleanup
-        # Recent items will just appear below welcome text if they exist
-
         return ft.Container(
             expand=True,
             alignment=ft.alignment.center,
@@ -1742,134 +1696,9 @@ def main(page: ft.Page):
                       ft.Icon(ft.Icons.HOME_FILLED, size=60, color=ft.Colors.BLUE_200),
                       ft.Text(f"Hello, {state.username}!", size=32, weight=ft.FontWeight.W_900, color="onSurface"),
                       ft.Text("Welcome to All Might", size=16, color="onSurfaceVariant"),
-                      ft.Container(height=30),
-                      # Only show row if has content
-                      ft.Container(
-                          content=recent_activity_row,
-                          height=100 if state.recent_activity else 0,
-                      )
                 ]
             )
         )
-
-    def get_search_view():
-        return ft.Stack(
-            expand=True,
-            controls=[
-                ft.Column(
-                    expand=True,
-                    controls=[
-                        ft.Text("Search", size=32, weight=ft.FontWeight.W_900, color="onSurface"),
-                        GlassContainer(opacity=0.15, padding=5, border_radius=state.get_radius('search'), content=ft.Row(controls=[channel_dropdown, ft.Container(width=1, height=30, bgcolor="outlineVariant"), search_field, ft.Stack(controls=[ft.IconButton(icon=ft.Icons.FILTER_LIST, icon_color="onSurface", tooltip="Filter", on_click=lambda e: toggle_filter_menu(not filter_menu.visible)), filter_badge_container]), ft.IconButton(icon=ft.Icons.SEARCH, icon_color="onSurface", on_click=perform_search)])),
-                        ft.Container(padding=ft.padding.only(left=10), content=result_count_text),
-                        results_column
-                    ]
-                ),
-                filter_dismiss_layer, filter_menu
-            ]
-        )
-
-    def get_cart_view():
-        refresh_cart_view(update_ui=False)
-        return ft.Column(
-            expand=True,
-            spacing=0,
-            controls=[
-                cart_header, # Pinned at top
-                cart_list    # Scrollable
-            ]
-        )
-
-    def get_lists_view():
-        if selected_list_name is None:
-            # Index View
-            refresh_lists_main_view(update_ui=False)
-            total_lists = len(state.saved_lists)
-            return ft.Column(
-                expand=True,
-                controls=[
-                    ft.Text(f"Saved Lists ({total_lists})", size=32, weight=ft.FontWeight.W_900, color="onSurface"),
-                    lists_main_col
-                ]
-            )
-        else:
-            # Detail View
-            refresh_list_detail_view(update_ui=False)
-
-            items = []
-            if is_viewing_favourites:
-                items = state.favourites
-            elif selected_list_name in state.saved_lists:
-                items = state.saved_lists[selected_list_name]
-
-            item_count = len(items)
-            display_name = "Favourites" if is_viewing_favourites else selected_list_name
-
-            # Unified List Shell Button (Similar to Cart/App UI)
-            list_header_shell_btn_container = ft.Container(
-                padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text(f"Try {display_name} in Shell", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE, size=12)]),
-                on_click=lambda e: run_list_shell(e),
-                ink=True
-            )
-
-            list_header_copy_btn = ft.IconButton(ft.Icons.CONTENT_COPY, icon_color=ft.Colors.WHITE70, tooltip="Copy List Command", on_click=lambda e: copy_list_command(e), icon_size=16, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=0)))
-
-            list_header_shell_btn = ft.Container(
-                bgcolor=ft.Colors.BLUE_600,
-                border_radius=state.get_radius('button'),
-                content=ft.Row(spacing=0, controls=[
-                    list_header_shell_btn_container,
-                    ft.Container(width=1, height=20, bgcolor=ft.Colors.WHITE24),
-                    list_header_copy_btn
-                ])
-            )
-
-            # Update tooltip logic for List Copy
-            if item_count > 0:
-                 cmd_clean = _build_shell_command_for_items(items, with_wrapper=False)
-                 cmd_full = _build_shell_command_for_items(items, with_wrapper=True)
-                 list_header_copy_btn.tooltip = cmd_clean
-                 list_header_shell_btn_container.tooltip = cmd_full
-            else:
-                 list_header_copy_btn.tooltip = "List is empty"
-                 list_header_shell_btn_container.tooltip = ""
-
-            # Control Row: Delete Button (Only for custom lists)
-            controls_row_items = [list_header_shell_btn]
-
-            if not is_viewing_favourites:
-                 delete_list_btn = ft.ElevatedButton(
-                    "Delete List",
-                    icon=ft.Icons.DELETE_OUTLINE,
-                    bgcolor=ft.Colors.RED_600,
-                    color=ft.Colors.WHITE,
-                    data=selected_list_name, # Critical for delete_saved_list to work
-                    on_click=delete_saved_list
-                )
-                 controls_row_items.insert(0, delete_list_btn)
-
-            header = ft.Container(
-                padding=ft.padding.only(bottom=10, top=10),
-                content=ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    controls=[
-                        ft.Row([
-                            ft.IconButton(ft.Icons.ARROW_BACK, on_click=go_back_to_lists_index, icon_color="onSurface"),
-                            ft.Text(f"{display_name} ({item_count} packages)", size=24, weight=ft.FontWeight.BOLD, color="onSurface")
-                        ]),
-                        ft.Row(spacing=10, controls=controls_row_items)
-                    ]
-                )
-            )
-            return ft.Column(
-                expand=True,
-                spacing=0,
-                controls=[
-                    header,
-                    list_detail_col
-                ]
-            )
 
     def get_settings_view():
         channels_row = ft.Row(wrap=True, spacing=10, run_spacing=10)
@@ -2076,6 +1905,29 @@ def main(page: ft.Page):
             if e.data == "true":
                 settings_ui_state["expanded_tile"] = e.control.data
 
+        # New: Helper for switching category in split view
+        def change_settings_category(e):
+            category = e.control.data
+            settings_ui_state["selected_category"] = category
+
+            # Update sidebar highlights
+            for ctrl in settings_nav_rail.controls:
+                 is_selected = (ctrl.data == category)
+                 ctrl.bgcolor = "secondaryContainer" if is_selected else ft.Colors.TRANSPARENT
+                 # Update icon/text color for better contrast on selection
+                 content_row = ctrl.content
+                 icon = content_row.controls[0]
+                 text = content_row.controls[1]
+                 col = "onSecondaryContainer" if is_selected else "onSurface"
+                 icon.color = col
+                 text.color = col
+
+            settings_nav_rail.update()
+
+            # Update content area
+            settings_content_area.content = get_settings_content(category)
+            settings_content_area.update()
+
         # Theme Handlers
         def update_theme_mode(e):
              selected_set = e.control.selected
@@ -2233,167 +2085,208 @@ def main(page: ft.Page):
         refresh_channels_list(update_ui=False)
         refresh_cmd_previews() # Init previews
 
-        # -- Organized Settings Layout with ExpansionTiles --
+        # --- Sidebar (Left Pane) ---
+        nav_items = [
+            ("profile", ft.Icons.PERSON, "User Profile"),
+            ("appearance", ft.Icons.PALETTE, "Appearance"),
+            ("channels", ft.Icons.LAYERS, "Channel & Search"),
+            ("run_config", ft.Icons.TERMINAL, "Run Configs")
+        ]
 
-        return ft.Column(
-            scroll=ft.ScrollMode.HIDDEN,
-            controls=[
-                ft.Text("Settings", size=32, weight=ft.FontWeight.W_900, color="onSurface"),
+        settings_nav_rail = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO)
 
-                ft.ExpansionTile(
-                    title=ft.Text("User Profile"),
-                    leading=ft.Icon(ft.Icons.PERSON),
-                    collapsed_text_color="onSurface",
-                    text_color="onSurface",
-                    icon_color=ft.Colors.BLUE_200,
-                    data="profile",
-                    initially_expanded=(settings_ui_state["expanded_tile"] == "profile"),
-                    on_change=on_tile_change,
-                    controls=[
-                         GlassContainer(opacity=0.1, padding=15, content=ft.Row([
-                            ft.Text("Username:", weight=ft.FontWeight.BOLD, color="onSurface"),
+        for key, icon, label in nav_items:
+            is_sel = (settings_ui_state["selected_category"] == key)
+            bg = "secondaryContainer" if is_sel else ft.Colors.TRANSPARENT
+            col = "onSecondaryContainer" if is_sel else "onSurface"
+
+            settings_nav_rail.controls.append(
+                ft.Container(
+                    content=ft.Row([ft.Icon(icon, color=col), ft.Text(label, color=col, weight=ft.FontWeight.W_500)], spacing=10),
+                    padding=10,
+                    border_radius=10,
+                    bgcolor=bg,
+                    on_click=change_settings_category,
+                    data=key,
+                    ink=True
+                )
+            )
+
+        # --- Content Generators (Right Pane) ---
+        def get_settings_content(category):
+            if category == "profile":
+                return GlassContainer(opacity=0.1, padding=20, content=ft.Column([
+                    ft.Text("User Profile", size=24, weight=ft.FontWeight.BOLD),
+                    ft.Divider(),
+                    ft.Text("Customize your user identity within the app."),
+                    ft.Container(height=20),
+                    ft.Row([
+                            ft.Text("Username:", weight=ft.FontWeight.BOLD, color="onSurface", width=100),
                             username_input
-                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN))
-                    ]
-                ),
+                        ], alignment=ft.MainAxisAlignment.START)
+                ]))
 
-                ft.ExpansionTile(
-                    title=ft.Text("Appearance"),
-                    leading=ft.Icon(ft.Icons.PALETTE),
-                    collapsed_text_color="onSurface",
-                    text_color="onSurface",
-                    icon_color=ft.Colors.PINK_200,
-                    data="appearance",
-                    initially_expanded=(settings_ui_state["expanded_tile"] == "appearance"),
-                    on_change=on_tile_change,
-                    controls=[
-                        GlassContainer(opacity=0.1, padding=15, content=ft.Column([
-                            ft.Text("Theme Mode", weight=ft.FontWeight.BOLD, color="onSurface"),
-                            theme_mode_segment,
-                            ft.Container(height=10),
-                            ft.Text("Accent Color", weight=ft.FontWeight.BOLD, color="onSurface"),
-                            ft.Row(controls=color_controls, spacing=10),
-                            ft.Divider(color=ft.Colors.OUTLINE, height=20),
-                            ft.Row([
-                                ft.Text("Base Font Size:", weight=ft.FontWeight.BOLD, color="onSurface"),
-                                font_size_input
-                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            elif category == "appearance":
+                return ft.Column(scroll=ft.ScrollMode.HIDDEN, controls=[
+                    ft.Text("Appearance", size=24, weight=ft.FontWeight.BOLD),
+                    ft.Divider(),
+                    GlassContainer(opacity=0.1, padding=20, content=ft.Column([
+                        ft.Text("Theme", weight=ft.FontWeight.BOLD, size=16),
+                        ft.Container(height=10),
+                        ft.Text("Mode:", weight=ft.FontWeight.BOLD),
+                        theme_mode_segment,
+                        ft.Container(height=10),
+                        ft.Text("Accent Color:", weight=ft.FontWeight.BOLD),
+                        ft.Row(controls=color_controls, spacing=10),
+                        ft.Divider(),
+                        ft.Row([
+                            ft.Text("Base Font Size:", weight=ft.FontWeight.BOLD),
+                            font_size_input
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ])),
+                    ft.Container(height=20),
+                    GlassContainer(opacity=0.1, padding=20, content=ft.Column([
+                        ft.Text("Radius & Geometry", weight=ft.FontWeight.BOLD, size=16),
+                        ft.Container(height=10),
 
-                            ft.Divider(color=ft.Colors.OUTLINE, height=20),
-                            ft.Text("Radius & Geometry", weight=ft.FontWeight.BOLD, color="onSurface", size=16),
-                            ft.Container(height=10),
+                        ft.Text("Global Radius:", weight=ft.FontWeight.BOLD),
+                        slider_global_radius,
 
-                            ft.Text("Global Radius:", weight=ft.FontWeight.BOLD, color="onSurface"),
-                            slider_global_radius,
+                        ft.Row([ft.Text("Nav Bar Radius:"), ft.Switch(value=state.sync_nav_radius, label="Sync", on_change=update_sync_nav_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        slider_nav_radius,
 
-                            ft.Row([ft.Text("Nav Bar Radius:", color="onSurface"), ft.Switch(value=state.sync_nav_radius, label="Sync", on_change=update_sync_nav_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            slider_nav_radius,
+                        ft.Row([ft.Text("Card Radius:"), ft.Switch(value=state.sync_card_radius, label="Sync", on_change=update_sync_card_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        slider_card_radius,
 
-                            ft.Row([ft.Text("Card Radius (Apps/Lists):", color="onSurface"), ft.Switch(value=state.sync_card_radius, label="Sync", on_change=update_sync_card_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            slider_card_radius,
+                        ft.Row([ft.Text("Button Radius:"), ft.Switch(value=state.sync_button_radius, label="Sync", on_change=update_sync_button_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        slider_button_radius,
 
-                            ft.Row([ft.Text("Button Radius:", color="onSurface"), ft.Switch(value=state.sync_button_radius, label="Sync", on_change=update_sync_button_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            slider_button_radius,
+                        ft.Row([ft.Text("Search Bar Radius:"), ft.Switch(value=state.sync_search_radius, label="Sync", on_change=update_sync_search_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        slider_search_radius,
 
-                            ft.Row([ft.Text("Search Bar Radius:", color="onSurface"), ft.Switch(value=state.sync_search_radius, label="Sync", on_change=update_sync_search_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            slider_search_radius,
+                        ft.Row([ft.Text("Selector Radius:"), ft.Switch(value=state.sync_selector_radius, label="Sync", on_change=update_sync_selector_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        slider_selector_radius,
 
-                            ft.Row([ft.Text("Channel Selector Radius:", color="onSurface"), ft.Switch(value=state.sync_selector_radius, label="Sync", on_change=update_sync_selector_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            slider_selector_radius,
+                        ft.Row([ft.Text("Footer Section Radius:"), ft.Switch(value=state.sync_footer_radius, label="Sync", on_change=update_sync_footer_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        slider_footer_radius,
 
-                            ft.Row([ft.Text("Footer Section Radius:", color="onSurface"), ft.Switch(value=state.sync_footer_radius, label="Sync", on_change=update_sync_footer_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            slider_footer_radius,
+                        ft.Row([ft.Text("Footer Chip Radius:"), ft.Switch(value=state.sync_chip_radius, label="Sync", on_change=update_sync_chip_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        slider_chip_radius,
+                    ])),
+                    ft.Container(height=20),
+                    GlassContainer(opacity=0.1, padding=20, content=ft.Column([
+                        ft.Text("Navigation Bar", weight=ft.FontWeight.BOLD, size=16),
+                        ft.Container(height=10),
+                        ft.Row([
+                            ft.Text("Always Floating:"),
+                            ft.Switch(value=state.floating_nav, on_change=update_floating_nav)
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.Row([
+                            ft.Text("Adaptive Expansion:"),
+                            ft.Switch(value=state.adaptive_nav, on_change=update_adaptive_nav)
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.Text("Total Length (Floating):"),
+                        nav_width_slider,
+                        ft.Row([
+                            ft.Text("Sync Icon Spacing:"),
+                            ft.Switch(value=state.sync_nav_spacing, on_change=update_sync_nav_spacing)
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.Text("Icon Spacing (Manual):"),
+                        nav_spacing_slider,
+                        ft.Container(height=10),
+                        ft.Row([
+                            ft.Text("Glass Effect:"),
+                            ft.Switch(value=state.glass_nav, on_change=update_glass_nav)
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.Container(height=10),
+                        ft.Row([
+                            ft.Text("Nav Badge Size:"),
+                            badge_size_input
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ])),
+                    ft.Container(height=20),
+                    GlassContainer(opacity=0.1, padding=20, content=ft.Column([
+                        ft.Text("Timers", weight=ft.FontWeight.BOLD, size=16),
+                        ft.Container(height=10),
+                        ft.Row([
+                            ft.Text("Confirm Dialog (s):"),
+                            confirm_timer_input
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.Container(height=10),
+                        ft.Row([
+                            ft.Text("Undo Toast (s):"),
+                            undo_timer_input
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ]))
+                ])
 
-                            ft.Row([ft.Text("Footer Chip Radius:", color="onSurface"), ft.Switch(value=state.sync_chip_radius, label="Sync", on_change=update_sync_chip_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            slider_chip_radius,
+            elif category == "channels":
+                return ft.Column(scroll=ft.ScrollMode.HIDDEN, controls=[
+                    ft.Text("Channel & Search", size=24, weight=ft.FontWeight.BOLD),
+                    ft.Divider(),
+                    GlassContainer(opacity=0.1, padding=20, content=ft.Column([
+                        ft.Text("Search Limit", weight=ft.FontWeight.BOLD),
+                        ft.Row([
+                            ft.Text("Max results:", size=12),
+                            search_limit_input
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.Container(height=20),
+                        ft.Text("Default Search Channel", weight=ft.FontWeight.BOLD),
+                        ft.Container(height=5),
+                        ft.Dropdown(options=[ft.dropdown.Option(c) for c in state.available_channels], value=state.default_channel, on_change=update_default_channel, bgcolor="surfaceVariant", border_color="outline", text_style=ft.TextStyle(color="onSurface"), filled=True),
+                        ft.Container(height=20),
+                        ft.Text("Available Channels", weight=ft.FontWeight.BOLD),
+                        ft.Container(height=10),
+                        channels_row,
+                        ft.Divider(color=ft.Colors.OUTLINE, height=20),
+                        ft.Row([ft.Text("Add Channel:", size=12), new_channel_input, ft.IconButton(ft.Icons.ADD_CIRCLE, icon_color=ft.Colors.GREEN, on_click=add_custom_channel)])
+                    ]))
+                ])
 
-                            ft.Divider(color=ft.Colors.OUTLINE, height=20),
-                            ft.Text("Navigation Bar Settings", weight=ft.FontWeight.BOLD, color="onSurface", size=16),
-                            ft.Container(height=10),
-                            ft.Row([
-                                ft.Text("Always Floating:", weight=ft.FontWeight.BOLD, color="onSurface"),
-                                ft.Switch(value=state.floating_nav, on_change=update_floating_nav)
-                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            ft.Row([
-                                ft.Text("Adaptive Expansion:", weight=ft.FontWeight.BOLD, color="onSurface"),
-                                ft.Switch(value=state.adaptive_nav, on_change=update_adaptive_nav)
-                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                             ft.Container(height=10),
-                            ft.Text("Total Length (Floating):", weight=ft.FontWeight.BOLD, color="onSurface"),
-                            nav_width_slider,
-                            ft.Row([
-                                ft.Text("Sync Icon Spacing:", weight=ft.FontWeight.BOLD, color="onSurface"),
-                                ft.Switch(value=state.sync_nav_spacing, on_change=update_sync_nav_spacing)
-                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            ft.Text("Icon Spacing (Manual):", weight=ft.FontWeight.BOLD, color="onSurface"),
-                            nav_spacing_slider,
-                            ft.Container(height=10),
-                            ft.Row([
-                                ft.Text("Glass Effect:", weight=ft.FontWeight.BOLD, color="onSurface"),
-                                ft.Switch(value=state.glass_nav, on_change=update_glass_nav)
-                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                        ]))
-                    ]
-                ),
+            elif category == "run_config":
+                return ft.Column(scroll=ft.ScrollMode.HIDDEN, controls=[
+                     ft.Text("Run Configurations", size=24, weight=ft.FontWeight.BOLD),
+                     ft.Divider(),
+                     GlassContainer(opacity=0.1, padding=20, content=ft.Column([
+                        ft.Text("Run without installing cmd config", weight=ft.FontWeight.BOLD),
+                        ft.Container(height=5),
+                        ft.Text("Prefix", weight=ft.FontWeight.BOLD), ft.TextField(value=state.shell_single_prefix, hint_text="nix run", text_size=12, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_change=update_shell_single_prefix),
+                        ft.Text("Suffix", weight=ft.FontWeight.BOLD), ft.TextField(value=state.shell_single_suffix, hint_text="", text_size=12, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_change=update_shell_single_suffix),
+                        cmd_preview_single,
+                        ft.Container(height=20),
+                        ft.Text("Cart/List try in shell cmd config", weight=ft.FontWeight.BOLD),
+                        ft.Container(height=5),
+                        ft.Text("Prefix", weight=ft.FontWeight.BOLD), ft.TextField(value=state.shell_cart_prefix, hint_text="nix shell", text_size=12, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_change=update_shell_cart_prefix),
+                        ft.Text("Suffix", weight=ft.FontWeight.BOLD), ft.TextField(value=state.shell_cart_suffix, hint_text="", text_size=12, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_change=update_shell_cart_suffix),
+                        cmd_preview_cart
+                    ]))
+                ])
+            return ft.Container()
 
-                ft.ExpansionTile(
-                    title=ft.Text("Channel & Search"),
-                    leading=ft.Icon(ft.Icons.LAYERS),
-                    collapsed_text_color="onSurface",
-                    text_color="onSurface",
-                    icon_color=ft.Colors.ORANGE_200,
-                    data="channels",
-                    initially_expanded=(settings_ui_state["expanded_tile"] == "channels"),
-                    on_change=on_tile_change,
-                    controls=[
-                        GlassContainer(opacity=0.1, padding=15, content=ft.Column([
-                            ft.Text("Search Limit", weight=ft.FontWeight.BOLD, color="onSurface"),
-                            ft.Row([
-                                ft.Text("Max results:", size=12, color="onSurface"),
-                                search_limit_input
-                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            ft.Container(height=10),
-                            ft.Text("Default Search Channel", weight=ft.FontWeight.BOLD, color="onSurface"),
-                            ft.Container(height=5),
-                            ft.Dropdown(options=[ft.dropdown.Option(c) for c in state.available_channels], value=state.default_channel, on_change=update_default_channel, bgcolor="surfaceVariant", border_color="outline", text_style=ft.TextStyle(color="onSurface"), filled=True),
-                            ft.Container(height=15),
-                            ft.Text("Available Channels", weight=ft.FontWeight.BOLD, color="onSurface"),
-                            ft.Container(height=10),
-                            channels_row,
-                            ft.Divider(color=ft.Colors.OUTLINE, height=20),
-                            ft.Row([ft.Text("Add Channel:", size=12, color="onSurface"), new_channel_input, ft.IconButton(ft.Icons.ADD_CIRCLE, icon_color=ft.Colors.GREEN, on_click=add_custom_channel)])
-                        ]))
-                    ]
-                ),
+        settings_content_area = ft.Container(
+            expand=True,
+            padding=ft.padding.only(left=20),
+            content=get_settings_content(settings_ui_state["selected_category"])
+        )
 
-                ft.ExpansionTile(
-                    title=ft.Text("Run Configurations"),
-                    leading=ft.Icon(ft.Icons.TERMINAL),
-                    collapsed_text_color="onSurface",
-                    text_color="onSurface",
-                    icon_color=ft.Colors.GREEN_200,
-                    data="run_config",
-                    initially_expanded=(settings_ui_state["expanded_tile"] == "run_config"),
-                    on_change=on_tile_change,
-                    controls=[
-                        GlassContainer(opacity=0.1, padding=15, content=ft.Column([
-                            ft.Text("Run without installing cmd config", weight=ft.FontWeight.BOLD, color="onSurface"),
-                            ft.Container(height=5),
-                            ft.Text("Prefix", weight=ft.FontWeight.BOLD, color="onSurface"), ft.TextField(value=state.shell_single_prefix, hint_text="nix run", text_size=12, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_change=update_shell_single_prefix),
-                            ft.Text("Suffix", weight=ft.FontWeight.BOLD, color="onSurface"), ft.TextField(value=state.shell_single_suffix, hint_text="", text_size=12, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_change=update_shell_single_suffix),
-                            cmd_preview_single,
-                            ft.Container(height=15),
-                            ft.Text("Cart/List try in shell cmd config", weight=ft.FontWeight.BOLD, color="onSurface"),
-                             ft.Container(height=5),
-                            ft.Text("Prefix", weight=ft.FontWeight.BOLD, color="onSurface"), ft.TextField(value=state.shell_cart_prefix, hint_text="nix shell", text_size=12, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_change=update_shell_cart_prefix),
-                            ft.Text("Suffix", weight=ft.FontWeight.BOLD, color="onSurface"), ft.TextField(value=state.shell_cart_suffix, hint_text="", text_size=12, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_change=update_shell_cart_suffix),
-                            cmd_preview_cart
-                        ]))
-                    ]
-                ),
-
-                ft.Container(height=50),
-            ]
+        return ft.Container(
+            padding=10,
+            content=ft.Row(
+                spacing=0,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+                controls=[
+                    # Sidebar
+                    ft.Container(
+                        width=200,
+                        content=settings_nav_rail,
+                        border=ft.border.only(right=ft.border.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
+                        padding=ft.padding.only(right=10)
+                    ),
+                    # Content Area
+                    settings_content_area
+                ],
+                expand=True
+            )
         )
 
     content_area = ft.Container(expand=True, padding=20, content=get_home_view()) # Default to Home
