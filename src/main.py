@@ -29,6 +29,10 @@ class AppState:
         self.theme_mode = "dark"
         self.theme_color = "blue"
 
+        # New Features
+        self.search_limit = 30 # Default search limit
+        self.floating_nav = False # Default to standard bar
+
         # Separate configs for Single App vs Cart
         self.shell_single_prefix = "x-terminal-emulator -e"
         self.shell_single_suffix = ""
@@ -62,6 +66,11 @@ class AppState:
                     self.undo_timer = data.get("undo_timer", legacy_timer)
 
                     self.nav_badge_size = data.get("nav_badge_size", 20)
+
+                    # New Features
+                    self.search_limit = data.get("search_limit", 30)
+                    self.floating_nav = data.get("floating_nav", False)
+
                     self.available_channels = data.get("available_channels", self.available_channels)
                     self.active_channels = data.get("active_channels", self.active_channels)
 
@@ -90,6 +99,8 @@ class AppState:
                 "confirm_timer": self.confirm_timer,
                 "undo_timer": self.undo_timer,
                 "nav_badge_size": self.nav_badge_size,
+                "search_limit": self.search_limit,
+                "floating_nav": self.floating_nav,
                 "available_channels": self.available_channels,
                 "active_channels": self.active_channels,
                 "shell_single_prefix": self.shell_single_prefix,
@@ -259,9 +270,12 @@ def execute_nix_search(query, channel):
     if not query:
         return []
 
+    # UPDATED: Use the configurable search limit
+    limit_val = str(state.search_limit)
+
     command = [
         "nix", "run", "nixpkgs#nh", "--",
-        "search", "--channel", channel, "-j", "--limit", "30", query
+        "search", "--channel", channel, "-j", "--limit", limit_val, query
     ]
 
     try:
@@ -1517,9 +1531,9 @@ def main(page: ft.Page):
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 alignment=ft.MainAxisAlignment.CENTER,
                 controls=[
-                     ft.Icon(ft.Icons.HOME_FILLED, size=60, color=ft.Colors.BLUE_200),
-                     ft.Text(f"Hello, {state.username}!", size=32, weight=ft.FontWeight.W_900, color="onSurface"),
-                     ft.Text("Welcome to All Might", size=16, color="onSurfaceVariant"),
+                      ft.Icon(ft.Icons.HOME_FILLED, size=60, color=ft.Colors.BLUE_200),
+                      ft.Text(f"Hello, {state.username}!", size=32, weight=ft.FontWeight.W_900, color="onSurface"),
+                      ft.Text("Welcome to All Might", size=16, color="onSurfaceVariant"),
                 ]
             )
         )
@@ -1693,6 +1707,23 @@ def main(page: ft.Page):
             except ValueError:
                 pass
 
+        # New Settings Handlers
+        def update_search_limit(e):
+            try:
+                val = int(e.control.value)
+                state.search_limit = val
+                state.save_settings()
+                show_toast(f"Search limit set to {val}")
+            except ValueError:
+                pass
+
+        def update_floating_nav(e):
+            state.floating_nav = e.control.value
+            state.save_settings()
+            # Force navbar style refresh
+            if navbar_ref[0]: navbar_ref[0]()
+            show_toast(f"Floating nav {'enabled' if state.floating_nav else 'disabled'}")
+
         # Helper to track expanded state
         def on_tile_change(e):
             if e.data == "true":
@@ -1799,6 +1830,9 @@ def main(page: ft.Page):
 
         badge_size_input = ft.TextField(value=str(state.nav_badge_size), hint_text="Default: 20", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_badge_size, on_blur=update_badge_size)
 
+        # New Input
+        search_limit_input = ft.TextField(value=str(state.search_limit), hint_text="Default: 30", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_search_limit, on_blur=update_search_limit)
+
         username_input = ft.TextField(value=state.username, hint_text="user", width=200, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_username, on_blur=update_username)
 
         # Theme Mode Segmented Button
@@ -1896,12 +1930,17 @@ def main(page: ft.Page):
                                 ft.Text("Nav Badge Size:", weight=ft.FontWeight.BOLD, color="onSurface"),
                                 badge_size_input
                             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                            ft.Container(height=10),
+                            ft.Row([
+                                ft.Text("Floating Navigation Bar:", weight=ft.FontWeight.BOLD, color="onSurface"),
+                                ft.Switch(value=state.floating_nav, on_change=update_floating_nav)
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                         ]))
                     ]
                 ),
 
                 ft.ExpansionTile(
-                    title=ft.Text("Channel Management"),
+                    title=ft.Text("Channel & Search"),
                     leading=ft.Icon(ft.Icons.LAYERS),
                     collapsed_text_color="onSurface",
                     text_color="onSurface",
@@ -1911,6 +1950,12 @@ def main(page: ft.Page):
                     on_change=on_tile_change,
                     controls=[
                         GlassContainer(opacity=0.1, padding=15, content=ft.Column([
+                            ft.Text("Search Limit", weight=ft.FontWeight.BOLD, color="onSurface"),
+                            ft.Row([
+                                ft.Text("Max results:", size=12, color="onSurface"),
+                                search_limit_input
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                            ft.Container(height=10),
                             ft.Text("Default Search Channel", weight=ft.FontWeight.BOLD, color="onSurface"),
                             ft.Container(height=5),
                             ft.Dropdown(options=[ft.dropdown.Option(c) for c in state.available_channels], value=state.default_channel, on_change=update_default_channel, bgcolor="surfaceVariant", border_color="outline", text_style=ft.TextStyle(color="onSurface"), filled=True),
@@ -1964,6 +2009,9 @@ def main(page: ft.Page):
         nav_button_controls = []
         current_nav_idx = [0] # Mutable to track current selection
 
+        # Base Container for styling updates
+        base_container_ref = [None]
+
         items = [
             (ft.Icons.HOME_OUTLINED, ft.Icons.HOME, "Home"),
             (ft.Icons.SEARCH_OUTLINED, ft.Icons.SEARCH, "Search"),
@@ -2001,6 +2049,17 @@ def main(page: ft.Page):
 
         def refresh_navbar():
             update_active_state(current_nav_idx[0])
+
+            # Update floating style
+            if base_container_ref[0]:
+                if state.floating_nav:
+                    base_container_ref[0].margin = ft.margin.only(left=20, right=20, bottom=20)
+                    base_container_ref[0].border_radius = 30
+                else:
+                    base_container_ref[0].margin = 0
+                    base_container_ref[0].border_radius = 0
+                if base_container_ref[0].page:
+                    base_container_ref[0].update()
 
         # Expose this function to main scope via reference
         navbar_ref[0] = refresh_navbar
@@ -2061,14 +2120,16 @@ def main(page: ft.Page):
                 final_controls.append(btn)
                 nav_button_controls.append(btn) # Store for updates
 
-        return GlassContainer(
+        container = GlassContainer(
             opacity=0.15,
-            border_radius=0,
+            border_radius=30 if state.floating_nav else 0, # Initial state
             blur_sigma=15,
             padding=ft.padding.only(top=5, bottom=5),
-            margin=0,
+            margin=ft.margin.only(left=20, right=20, bottom=20) if state.floating_nav else 0, # Initial state
             content=ft.Row(controls=final_controls, alignment=ft.MainAxisAlignment.SPACE_EVENLY)
         )
+        base_container_ref[0] = container
+        return container
 
     def on_nav_change(idx):
         if idx == 0: content_area.content = get_home_view()
