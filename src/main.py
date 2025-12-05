@@ -31,7 +31,18 @@ class AppState:
 
         # New Features
         self.search_limit = 30 # Default search limit
-        self.floating_nav = False # Default to standard bar
+
+        # Nav Bar Settings
+        self.floating_nav = True # Now acts as "Always Floating" if adaptive is off
+        self.adaptive_nav = True # New: Toggle for adaptive behavior
+        self.nav_radius = 33 # Default to 33 as requested
+        self.glass_nav = True
+        self.nav_bar_width = 410 # Default length 410 as requested
+        self.nav_icon_spacing = 15 # Default spacing
+        self.sync_nav_spacing = True # Default sync enabled
+
+        # History
+        self.recent_activity = [] # List of {package, channel}
 
         # Separate configs for Single App vs Cart
         self.shell_single_prefix = "x-terminal-emulator -e"
@@ -69,12 +80,17 @@ class AppState:
 
                     # New Features
                     self.search_limit = data.get("search_limit", 30)
-                    self.floating_nav = data.get("floating_nav", False)
+                    self.floating_nav = data.get("floating_nav", True)
+                    self.adaptive_nav = data.get("adaptive_nav", True)
+                    self.nav_radius = data.get("nav_radius", 33)
+                    self.glass_nav = data.get("glass_nav", True)
+                    self.nav_bar_width = data.get("nav_bar_width", 410)
+                    self.nav_icon_spacing = data.get("nav_icon_spacing", 15)
+                    self.sync_nav_spacing = data.get("sync_nav_spacing", True)
 
                     self.available_channels = data.get("available_channels", self.available_channels)
                     self.active_channels = data.get("active_channels", self.active_channels)
 
-                    # Load extended shell configs
                     self.shell_single_prefix = data.get("shell_single_prefix", data.get("shell_prefix", "x-terminal-emulator -e"))
                     self.shell_single_suffix = data.get("shell_single_suffix", data.get("shell_suffix", ""))
                     self.shell_cart_prefix = data.get("shell_cart_prefix", self.shell_single_prefix)
@@ -83,6 +99,7 @@ class AppState:
                     self.cart_items = data.get("cart_items", [])
                     self.favourites = data.get("favourites", [])
                     self.saved_lists = data.get("saved_lists", {})
+                    self.recent_activity = data.get("recent_activity", [])
 
             except Exception as e:
                 print(f"Error loading settings: {e}")
@@ -101,6 +118,12 @@ class AppState:
                 "nav_badge_size": self.nav_badge_size,
                 "search_limit": self.search_limit,
                 "floating_nav": self.floating_nav,
+                "adaptive_nav": self.adaptive_nav,
+                "nav_radius": self.nav_radius,
+                "glass_nav": self.glass_nav,
+                "nav_bar_width": self.nav_bar_width,
+                "nav_icon_spacing": self.nav_icon_spacing,
+                "sync_nav_spacing": self.sync_nav_spacing,
                 "available_channels": self.available_channels,
                 "active_channels": self.active_channels,
                 "shell_single_prefix": self.shell_single_prefix,
@@ -109,7 +132,8 @@ class AppState:
                 "shell_cart_suffix": self.shell_cart_suffix,
                 "cart_items": self.cart_items,
                 "favourites": self.favourites,
-                "saved_lists": self.saved_lists
+                "saved_lists": self.saved_lists,
+                "recent_activity": self.recent_activity
             }
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(data, f, indent=4)
@@ -192,6 +216,28 @@ class AppState:
 
     def restore_list(self, name, items):
         self.saved_lists[name] = items
+        self.save_settings()
+
+    # --- History Logic ---
+    def add_to_history(self, package, channel):
+        # Prevent duplicates by ID, move to top
+        pkg_id = self._get_pkg_id(package)
+
+        # Remove if exists
+        self.recent_activity = [
+            item for item in self.recent_activity
+            if self._get_pkg_id(item['package']) != pkg_id or item['channel'] != channel
+        ]
+
+        # Add to front
+        self.recent_activity.insert(0, {'package': package, 'channel': channel})
+
+        # Keep max 5
+        self.recent_activity = self.recent_activity[:5]
+        self.save_settings()
+
+    def clear_history(self):
+        self.recent_activity = []
         self.save_settings()
 
     # --- Favourites Logic ---
@@ -655,6 +701,9 @@ class NixPackageCard(GlassContainer):
             self.fav_btn.update()
 
     def toggle_favourite(self, e):
+        # HISTORY LOGIC
+        state.add_to_history(self.pkg, self.selected_channel)
+
         action = state.toggle_favourite(self.pkg, self.selected_channel)
         self.update_fav_btn_state()
 
@@ -672,6 +721,9 @@ class NixPackageCard(GlassContainer):
             if self.show_toast: self.show_toast("Added to favourites")
 
     def handle_cart_click(self, e):
+        # HISTORY LOGIC
+        state.add_to_history(self.pkg, self.selected_channel)
+
         in_cart = state.is_in_cart(self.pkg, self.selected_channel)
         action_type = "remove" if in_cart else "add"
 
@@ -753,11 +805,17 @@ class NixPackageCard(GlassContainer):
         if self.try_btn.page: self.try_btn.update()
 
     def copy_command(self, e):
+        # HISTORY LOGIC
+        state.add_to_history(self.pkg, self.selected_channel)
+
         cmd = self._generate_nix_command(with_wrapper=False)
         self.page_ref.set_clipboard(cmd)
         if self.show_toast: self.show_toast(f"Copied: {cmd}")
 
     def run_action(self):
+        # HISTORY LOGIC
+        state.add_to_history(self.pkg, self.selected_channel)
+
         display_cmd = self._generate_nix_command(with_wrapper=True)
         cmd_list = shlex.split(display_cmd)
 
@@ -1524,6 +1582,51 @@ def main(page: ft.Page):
         if update_ui and list_detail_col.page: list_detail_col.update()
 
     def get_home_view():
+        # -- Recent Activity Section --
+        recent_activity_row = ft.Row(scroll=ft.ScrollMode.HIDDEN, spacing=10)
+
+        def show_pkg_details_dialog(item):
+            # Create a simplified dialog showing the package card
+            pkg = item['package']
+            channel = item['channel']
+
+            # Using NixPackageCard in a dialog might be large, but it's consistent
+            # We need to pass None for on_menu_open since it's not in a list context essentially
+            card = NixPackageCard(pkg, page, channel, show_toast_callback=show_toast)
+
+            dlg = ft.AlertDialog(
+                content=ft.Container(width=400, content=card, padding=0),
+                content_padding=0,
+                bgcolor=ft.Colors.TRANSPARENT, # Let card handle bg
+            )
+            page.open(dlg)
+
+        if not state.recent_activity:
+            pass # Don't show anything if empty, as requested to be clean
+        else:
+            for item in state.recent_activity:
+                pkg = item['package']
+                pname = pkg.get("package_pname", "Unknown")
+
+                # Small card for recent item
+                recent_card = GlassContainer(
+                    width=140, height=80, padding=10, opacity=0.1,
+                    on_click=lambda e, i=item: show_pkg_details_dialog(i),
+                    content=ft.Column(
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        spacing=2,
+                        controls=[
+                            ft.Icon(ft.Icons.HISTORY, size=16, color=ft.Colors.BLUE_200),
+                            ft.Text(pname, weight=ft.FontWeight.BOLD, size=12, no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS, text_align=ft.TextAlign.CENTER),
+                            ft.Text(item['channel'], size=9, color="onSurfaceVariant", no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS)
+                        ]
+                    )
+                )
+                recent_activity_row.controls.append(recent_card)
+
+        # Removed clear history button and title row to keep it minimal as requested in cleanup
+        # Recent items will just appear below welcome text if they exist
+
         return ft.Container(
             expand=True,
             alignment=ft.alignment.center,
@@ -1534,6 +1637,12 @@ def main(page: ft.Page):
                       ft.Icon(ft.Icons.HOME_FILLED, size=60, color=ft.Colors.BLUE_200),
                       ft.Text(f"Hello, {state.username}!", size=32, weight=ft.FontWeight.W_900, color="onSurface"),
                       ft.Text("Welcome to All Might", size=16, color="onSurfaceVariant"),
+                      ft.Container(height=30),
+                      # Only show row if has content
+                      ft.Container(
+                          content=recent_activity_row,
+                          height=100 if state.recent_activity else 0,
+                      )
                 ]
             )
         )
@@ -1722,7 +1831,55 @@ def main(page: ft.Page):
             state.save_settings()
             # Force navbar style refresh
             if navbar_ref[0]: navbar_ref[0]()
-            show_toast(f"Floating nav {'enabled' if state.floating_nav else 'disabled'}")
+            show_toast(f"Always floating {'enabled' if state.floating_nav else 'disabled'}")
+
+        def update_adaptive_nav(e):
+            state.adaptive_nav = e.control.value
+            state.save_settings()
+            if navbar_ref[0]: navbar_ref[0]()
+            show_toast(f"Adaptive nav {'enabled' if state.adaptive_nav else 'disabled'}")
+
+        def update_nav_radius(e):
+            try:
+                val = int(e.control.value)
+                state.nav_radius = val
+                state.save_settings()
+                if navbar_ref[0]: navbar_ref[0]()
+                # show_toast(f"Nav radius set to {val}") # Too noisy on slide
+            except ValueError:
+                pass
+
+        def update_glass_nav(e):
+            state.glass_nav = e.control.value
+            state.save_settings()
+            if navbar_ref[0]: navbar_ref[0]()
+            show_toast(f"Glass effect {'enabled' if state.glass_nav else 'disabled'}")
+
+        def update_nav_width(e):
+            try:
+                val = int(e.control.value)
+                state.nav_bar_width = val
+                state.save_settings()
+                if navbar_ref[0]: navbar_ref[0]()
+            except ValueError:
+                pass
+
+        def update_icon_spacing(e):
+            try:
+                val = int(e.control.value)
+                state.nav_icon_spacing = val
+                state.save_settings()
+                if navbar_ref[0]: navbar_ref[0]()
+            except ValueError:
+                pass
+
+        def update_sync_nav_spacing(e):
+            state.sync_nav_spacing = e.control.value
+            state.save_settings()
+            nav_spacing_slider.disabled = state.sync_nav_spacing
+            nav_spacing_slider.update()
+            if navbar_ref[0]: navbar_ref[0]()
+            show_toast(f"Sync spacing {'enabled' if state.sync_nav_spacing else 'disabled'}")
 
         # Helper to track expanded state
         def on_tile_change(e):
@@ -1830,8 +1987,13 @@ def main(page: ft.Page):
 
         badge_size_input = ft.TextField(value=str(state.nav_badge_size), hint_text="Default: 20", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_badge_size, on_blur=update_badge_size)
 
-        # New Input
+        # New Inputs
         search_limit_input = ft.TextField(value=str(state.search_limit), hint_text="Default: 30", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_search_limit, on_blur=update_search_limit)
+        nav_radius_slider = ft.Slider(min=0, max=50, value=state.nav_radius, divisions=50, label="{value}", on_change=update_nav_radius)
+
+        # Nav Size Sliders
+        nav_width_slider = ft.Slider(min=200, max=600, value=state.nav_bar_width, divisions=40, label="{value}", on_change=update_nav_width)
+        nav_spacing_slider = ft.Slider(min=0, max=50, value=state.nav_icon_spacing, divisions=50, label="{value}", on_change=update_icon_spacing, disabled=state.sync_nav_spacing)
 
         username_input = ft.TextField(value=state.username, hint_text="user", width=200, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_username, on_blur=update_username)
 
@@ -1932,8 +2094,28 @@ def main(page: ft.Page):
                             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                             ft.Container(height=10),
                             ft.Row([
-                                ft.Text("Floating Navigation Bar:", weight=ft.FontWeight.BOLD, color="onSurface"),
+                                ft.Text("Always Floating Navigation Bar:", weight=ft.FontWeight.BOLD, color="onSurface"),
                                 ft.Switch(value=state.floating_nav, on_change=update_floating_nav)
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                            ft.Row([
+                                ft.Text("Adaptive Navigation Bar:", weight=ft.FontWeight.BOLD, color="onSurface"),
+                                ft.Switch(value=state.adaptive_nav, on_change=update_adaptive_nav)
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                             ft.Container(height=10),
+                            ft.Text("Nav Bar Total Length (Floating):", weight=ft.FontWeight.BOLD, color="onSurface"),
+                            nav_width_slider,
+                            ft.Row([
+                                ft.Text("Sync Icon Spacing with Length:", weight=ft.FontWeight.BOLD, color="onSurface"),
+                                ft.Switch(value=state.sync_nav_spacing, on_change=update_sync_nav_spacing)
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                            ft.Text("Nav Bar Icon Spacing (Manual):", weight=ft.FontWeight.BOLD, color="onSurface"),
+                            nav_spacing_slider,
+                            ft.Text("Nav Bar Radius:", weight=ft.FontWeight.BOLD, color="onSurface"),
+                            nav_radius_slider,
+                            ft.Container(height=10),
+                            ft.Row([
+                                ft.Text("Glass Effect on Nav:", weight=ft.FontWeight.BOLD, color="onSurface"),
+                                ft.Switch(value=state.glass_nav, on_change=update_glass_nav)
                             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                         ]))
                     ]
@@ -2011,6 +2193,8 @@ def main(page: ft.Page):
 
         # Base Container for styling updates
         base_container_ref = [None]
+        # Main Row for spacing updates
+        main_row_ref = [None]
 
         items = [
             (ft.Icons.HOME_OUTLINED, ft.Icons.HOME, "Home"),
@@ -2023,25 +2207,33 @@ def main(page: ft.Page):
         def update_active_state(selected_idx):
             for i, control in enumerate(nav_button_controls):
                 is_selected = (i == selected_idx)
-                # Structure: Container -> Column -> [Icon, Text]
-                # If wrapped in Stack (Cart), it's Stack -> Container -> Column -> ...
 
-                if isinstance(control, ft.Stack):
-                    content_col = control.controls[0].content
-                else:
-                    content_col = control.content
+                # Unwrap if it's a stack (badge)
+                actual_btn_container = control.controls[0] if isinstance(control, ft.Stack) else control
+
+                # Get the column inside the container
+                content_col = actual_btn_container.content
 
                 icon_control = content_col.controls[0]
                 text_control = content_col.controls[1]
 
                 # Use theme aware colors for nav bar
-                active_col = "onSurface"
-                # This fetches the *current* base color (white for dark mode, black for light mode)
-                inactive_col = ft.Colors.with_opacity(0.5, state.get_base_color())
+                active_col = "onSecondaryContainer"
+                inactive_col = ft.Colors.with_opacity(0.6, state.get_base_color())
 
+                # Update Icon and Text
                 icon_control.name = items[i][1] if is_selected else items[i][0]
                 icon_control.color = active_col if is_selected else inactive_col
                 text_control.color = active_col if is_selected else inactive_col
+
+                # Active Pill Indicator Logic
+                if is_selected:
+                    actual_btn_container.bgcolor = "secondaryContainer"
+                    # Make icon distinct
+                    icon_control.color = "onSecondaryContainer"
+                    text_control.color = "onSecondaryContainer"
+                else:
+                    actual_btn_container.bgcolor = ft.Colors.TRANSPARENT
 
                 # Force update of the specific container/stack
                 if control.page:
@@ -2050,14 +2242,50 @@ def main(page: ft.Page):
         def refresh_navbar():
             update_active_state(current_nav_idx[0])
 
-            # Update floating style
-            if base_container_ref[0]:
-                if state.floating_nav:
-                    base_container_ref[0].margin = ft.margin.only(left=20, right=20, bottom=20)
-                    base_container_ref[0].border_radius = 30
+            # Update Spacing based on Sync Setting
+            if main_row_ref[0]:
+                if state.sync_nav_spacing:
+                    main_row_ref[0].spacing = 0 # Ignored by SPACE_EVENLY
+                    main_row_ref[0].alignment = ft.MainAxisAlignment.SPACE_EVENLY
                 else:
-                    base_container_ref[0].margin = 0
-                    base_container_ref[0].border_radius = 0
+                    main_row_ref[0].spacing = state.nav_icon_spacing
+                    main_row_ref[0].alignment = ft.MainAxisAlignment.CENTER
+
+                if main_row_ref[0].page:
+                    main_row_ref[0].update()
+
+            if base_container_ref[0]:
+                is_wide = page.width > 600
+                is_adaptive_active = state.adaptive_nav and is_wide
+
+                should_float = True
+                if state.floating_nav:
+                    should_float = True
+                elif state.adaptive_nav and is_wide:
+                    should_float = False
+
+                # Update Floating / Full Width Style
+                if should_float:
+                    # Floating Mode
+                    base_container_ref[0].width = state.nav_bar_width # Custom width
+                    base_container_ref[0].margin = ft.margin.only(bottom=20)
+                    base_container_ref[0].border_radius = state.nav_radius
+                else:
+                    # Full Width Mode
+                    base_container_ref[0].width = page.width - 40 # Padding from edges as requested
+                    base_container_ref[0].margin = ft.margin.only(bottom=10) # Small bottom margin
+                    base_container_ref[0].border_radius = 10 # Normal corners
+
+                # Update Glass / Solid Style
+                if state.glass_nav:
+                    base_container_ref[0].bgcolor = ft.Colors.with_opacity(0.15, state.get_base_color())
+                    base_container_ref[0].blur = ft.Blur(15, 15, ft.BlurTileMode.MIRROR)
+                    base_container_ref[0].border = ft.border.all(1, ft.Colors.with_opacity(0.2, state.get_base_color()))
+                else:
+                    base_container_ref[0].bgcolor = ft.Colors.SURFACE_VARIANT
+                    base_container_ref[0].blur = None
+                    base_container_ref[0].border = None
+
                 if base_container_ref[0].page:
                     base_container_ref[0].update()
 
@@ -2071,35 +2299,27 @@ def main(page: ft.Page):
             on_change(idx)
 
         def create_nav_btn(index, icon_off, icon_on, label):
-            is_active = (index == 0) # Default Home active
-            active_col = "onSurface"
-            inactive_col = ft.Colors.with_opacity(0.5, state.get_base_color())
+            # Initial Colors (will be updated by update_active_state on init)
+            inactive_col = ft.Colors.with_opacity(0.6, state.get_base_color())
 
-            icon = ft.Icon(
-                name=icon_on if is_active else icon_off,
-                color=active_col if is_active else inactive_col,
-                size=24
-            )
-            text = ft.Text(
-                value=label,
-                size=10,
-                color=active_col if is_active else inactive_col,
-                weight=ft.FontWeight.BOLD
-            )
+            icon = ft.Icon(name=icon_off, color=inactive_col, size=24)
+            text = ft.Text(value=label, size=10, color=inactive_col, weight=ft.FontWeight.BOLD)
 
-            # Using Container for clickability instead of IconButton for layout control
+            # Button Container (The Pill)
+            # We initialize it transparent; update_active_state handles the pill shape/color
             btn_container = ft.Container(
                 content=ft.Column(
                     controls=[icon, text],
                     alignment=ft.MainAxisAlignment.CENTER,
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    spacing=2
+                    spacing=0 # Tighter spacing
                 ),
-                padding=10,
-                border_radius=10,
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                border_radius=30, # Pill shape for the active item
                 ink=True,
                 on_click=handle_click,
-                data=index
+                data=index,
+                animate=ft.Animation(300, ft.AnimationCurve.EASE_OUT)
             )
             return btn_container
 
@@ -2107,29 +2327,44 @@ def main(page: ft.Page):
         for i, (icon_off, icon_on, label) in enumerate(items):
             btn = create_nav_btn(i, icon_off, icon_on, label)
 
-            if i == 2: # Cart is now index 2
-                # Stack wrapper for badge
+            # Badge logic wraps the container in a Stack
+            if i == 2: # Cart
                 wrapper = ft.Stack([btn, cart_badge_container])
                 final_controls.append(wrapper)
-                nav_button_controls.append(wrapper) # Store for updates
-            elif i == 3: # Lists is now index 3
+                nav_button_controls.append(wrapper)
+            elif i == 3: # Lists
                 wrapper = ft.Stack([btn, lists_badge_container])
                 final_controls.append(wrapper)
-                nav_button_controls.append(wrapper) # Store for updates
+                nav_button_controls.append(wrapper)
             else:
                 final_controls.append(btn)
-                nav_button_controls.append(btn) # Store for updates
+                nav_button_controls.append(btn)
 
-        container = GlassContainer(
-            opacity=0.15,
-            border_radius=30 if state.floating_nav else 0, # Initial state
-            blur_sigma=15,
-            padding=ft.padding.only(top=5, bottom=5),
-            margin=ft.margin.only(left=20, right=20, bottom=20) if state.floating_nav else 0, # Initial state
-            content=ft.Row(controls=final_controls, alignment=ft.MainAxisAlignment.SPACE_EVENLY)
+        # Main Nav Bar Container
+
+        main_row = ft.Row(
+                controls=final_controls,
+                alignment=ft.MainAxisAlignment.SPACE_EVENLY, # Default sync
+                spacing=0
+            )
+        main_row_ref[0] = main_row
+
+        container = ft.Container(
+            content=main_row,
+            padding=ft.padding.symmetric(horizontal=10, vertical=5),
+            animate=ft.Animation(300, ft.AnimationCurve.EASE_OUT)
         )
+
         base_container_ref[0] = container
-        return container
+
+        # Trigger initial style application
+        refresh_navbar()
+
+        return ft.Container(
+            alignment=ft.alignment.center, # Ensures the bar is centered horizontally
+            content=container,
+            padding=ft.padding.only(bottom=10) # Padding for floating position
+        )
 
     def on_nav_change(idx):
         if idx == 0: content_area.content = get_home_view()
@@ -2143,11 +2378,19 @@ def main(page: ft.Page):
         elif idx == 4: content_area.content = get_settings_view()
         content_area.update()
 
+    # Adaptive Resize Handler
+    def handle_resize(e):
+        if navbar_ref[0]:
+            navbar_ref[0]() # Re-run nav styling logic
+
+    page.on_resized = handle_resize
+
     nav_bar = build_custom_navbar(on_nav_change)
     background = ft.Container(expand=True, gradient=ft.LinearGradient(begin=ft.alignment.top_left, end=ft.alignment.bottom_right, colors=["background", "surfaceVariant"])) # Adaptive gradient
     decorations = ft.Stack(controls=[ft.Container(width=300, height=300, bgcolor="primary", border_radius=150, top=-100, right=-50, blur=ft.Blur(100, 100, ft.BlurTileMode.MIRROR), opacity=0.15), ft.Container(width=200, height=200, bgcolor="tertiary", border_radius=100, bottom=100, left=-50, blur=ft.Blur(80, 80, ft.BlurTileMode.MIRROR), opacity=0.15)])
 
     # Adding global menu components to the main Stack
+    # nav_bar is now wrapped in a container that aligns it at the bottom
     page.add(ft.Stack(expand=True, controls=[background, decorations, ft.Column(expand=True, spacing=0, controls=[content_area, nav_bar]), global_dismiss_layer, global_menu_card, toast_overlay_container]))
 
 if __name__ == "__main__":
