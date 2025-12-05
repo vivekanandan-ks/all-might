@@ -22,7 +22,6 @@ class AppState:
     def __init__(self):
         self.username = "user"
         self.default_channel = "nixos-24.11"
-        self.font_size = 14  # Default font size
         self.confirm_timer = 5 # Default countdown for confirmation dialog
         self.undo_timer = 5    # Default countdown for undo toast
         self.nav_badge_size = 20 # Default size for nav badges
@@ -36,12 +35,12 @@ class AppState:
         self.floating_nav = True # Now acts as "Always Floating" if adaptive is off
         self.adaptive_nav = True # New: Toggle for adaptive behavior
         self.glass_nav = True
-        self.nav_bar_width = 410 # Default length 410 as requested
+        self.nav_bar_width = 500 # Default length 500 as requested
         self.nav_icon_spacing = 15 # Default spacing
         self.sync_nav_spacing = True # Default sync enabled
 
         # Radius Settings
-        self.global_radius = 20
+        self.global_radius = 33
 
         self.nav_radius = 33
         self.sync_nav_radius = True
@@ -63,6 +62,21 @@ class AppState:
 
         self.chip_radius = 10
         self.sync_chip_radius = True
+
+        # Font Settings
+        self.global_font_size = 14
+
+        self.title_font_size = 16
+        self.sync_title_font = True
+
+        self.body_font_size = 14
+        self.sync_body_font = True
+
+        self.small_font_size = 12
+        self.sync_small_font = True
+
+        self.nav_font_size = 12
+        self.sync_nav_font = True
 
         # History
         self.recent_activity = [] # List of {package, channel}
@@ -91,7 +105,6 @@ class AppState:
                     data = json.load(f)
                     self.username = data.get("username", "user")
                     self.default_channel = data.get("default_channel", self.default_channel)
-                    self.font_size = data.get("font_size", 14)
                     self.theme_mode = data.get("theme_mode", "dark")
                     self.theme_color = data.get("theme_color", "blue")
 
@@ -106,7 +119,7 @@ class AppState:
                     self.floating_nav = data.get("floating_nav", True)
                     self.adaptive_nav = data.get("adaptive_nav", True)
                     self.glass_nav = data.get("glass_nav", True)
-                    self.nav_bar_width = data.get("nav_bar_width", 410)
+                    self.nav_bar_width = data.get("nav_bar_width", 500)
                     self.nav_icon_spacing = data.get("nav_icon_spacing", 15)
                     self.sync_nav_spacing = data.get("sync_nav_spacing", True)
 
@@ -134,6 +147,21 @@ class AppState:
                     self.chip_radius = data.get("chip_radius", 10)
                     self.sync_chip_radius = data.get("sync_chip_radius", True)
 
+                    # Fonts
+                    self.global_font_size = data.get("font_size", data.get("global_font_size", 14)) # Backward compat
+
+                    self.title_font_size = data.get("title_font_size", 16)
+                    self.sync_title_font = data.get("sync_title_font", True)
+
+                    self.body_font_size = data.get("body_font_size", 14)
+                    self.sync_body_font = data.get("sync_body_font", True)
+
+                    self.small_font_size = data.get("small_font_size", 12)
+                    self.sync_small_font = data.get("sync_small_font", True)
+
+                    self.nav_font_size = data.get("nav_font_size", 12)
+                    self.sync_nav_font = data.get("sync_nav_font", True)
+
                     self.available_channels = data.get("available_channels", self.available_channels)
                     self.active_channels = data.get("active_channels", self.active_channels)
 
@@ -156,7 +184,6 @@ class AppState:
             data = {
                 "username": self.username,
                 "default_channel": self.default_channel,
-                "font_size": self.font_size,
                 "theme_mode": self.theme_mode,
                 "theme_color": self.theme_color,
                 "confirm_timer": self.confirm_timer,
@@ -187,6 +214,16 @@ class AppState:
                 "chip_radius": self.chip_radius,
                 "sync_chip_radius": self.sync_chip_radius,
 
+                "global_font_size": self.global_font_size,
+                "title_font_size": self.title_font_size,
+                "sync_title_font": self.sync_title_font,
+                "body_font_size": self.body_font_size,
+                "sync_body_font": self.sync_body_font,
+                "small_font_size": self.small_font_size,
+                "sync_small_font": self.sync_small_font,
+                "nav_font_size": self.nav_font_size,
+                "sync_nav_font": self.sync_nav_font,
+
                 "available_channels": self.available_channels,
                 "active_channels": self.active_channels,
                 "shell_single_prefix": self.shell_single_prefix,
@@ -204,14 +241,38 @@ class AppState:
             print(f"Error saving settings: {e}")
 
     # --- Scalable Font Logic ---
+    def get_font_size(self, component):
+        """
+        Calculates font size based on component type.
+        component: 'title', 'body', 'small', 'nav'
+        """
+        # Default scaling factors relative to global
+        if component == 'title':
+            if self.sync_title_font:
+                return int(self.global_font_size * 1.15)
+            return self.title_font_size
+        elif component == 'body':
+            if self.sync_body_font:
+                return int(self.global_font_size * 1.0)
+            return self.body_font_size
+        elif component == 'small':
+            if self.sync_small_font:
+                return int(self.global_font_size * 0.85)
+            return self.small_font_size
+        elif component == 'nav':
+            if self.sync_nav_font:
+                return int(self.get_font_size('small') * 0.9)
+            return self.nav_font_size
+
+        return self.global_font_size
+
     def get_size(self, scale=1.0):
-        """Calculates font size based on base font_size and a scale multiplier."""
-        return int(self.font_size * scale)
+        # Legacy helper for manual scaling (e.g. icons) based on global font
+        return int(self.global_font_size * scale)
 
     def get_radius(self, component):
         """
         Returns the effective radius for a component.
-        component: 'nav', 'card', 'button', 'search', 'selector', 'footer', 'chip'
         """
         if component == 'nav':
             return self.global_radius if self.sync_nav_radius else self.nav_radius
@@ -473,7 +534,7 @@ class HoverLink(ft.Container):
         base_col = state.get_base_color()
 
         if text_size is None:
-            text_size = state.get_size(0.85)
+            text_size = state.get_font_size('small')
 
         super().__init__(
             content=ft.Row([ft.Icon(icon, size=text_size+2, color=color_group[0]), ft.Text(text, size=text_size, color=color_group[1])], spacing=5, alignment=ft.MainAxisAlignment.START),
@@ -503,7 +564,7 @@ class UndoToast(ft.Container):
         self.cancelled = False
 
         # Scalable fonts
-        text_sz = state.get_size(1.0)
+        text_sz = state.get_font_size('body')
 
         # UI Components
         self.counter_text = ft.Text(str(duration_seconds), size=text_sz*0.85, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)
@@ -605,10 +666,10 @@ class NixPackageCard(GlassContainer):
         text_col = "onSurfaceVariant"
 
         # Calculate sizes based on global state
-        size_norm = state.get_size(1.0)
-        size_sm = state.get_size(0.85)
-        size_lg = state.get_size(1.15)
-        size_tag = state.get_size(0.7)
+        size_norm = state.get_font_size('body')
+        size_sm = state.get_font_size('small')
+        size_lg = state.get_font_size('title')
+        size_tag = state.get_font_size('small') * 0.9
 
         self.channel_text = ft.Text(f"{self.version} ({self.selected_channel})", size=size_sm, color=text_col)
         channel_menu_items = [ft.PopupMenuItem(text=ch, on_click=self.change_channel, data=ch) for ch in state.active_channels]
@@ -973,7 +1034,26 @@ def main(page: ft.Page):
 
     # --- UI Persistence State ---
     # Keeps track of which settings tile is open to restore it after theme reload
-    settings_ui_state = {"expanded_tile": None, "selected_category": "appearance"}
+    settings_ui_state = {
+        "expanded_tile": None,
+        "selected_category": "appearance",
+        "scroll_offset": 0 # NEW: Track scroll position
+    }
+
+    # NEW: Ref for settings scroll restoration
+    settings_scroll_ref = ft.Ref()
+
+    # NEW: Ref for targeted settings refresh
+    settings_refresh_ref = [None]
+
+    # NEW: Persistent Column for Settings
+    settings_main_column = ft.Column(
+        scroll=ft.ScrollMode.HIDDEN,
+        expand=True,
+        ref=settings_scroll_ref,
+        on_scroll=lambda e: settings_ui_state.update({"scroll_offset": e.pixels}),
+        on_scroll_interval=10,
+    )
 
     # --- Global Menu Logic ---
     # We use a global stack layer for the menu to ensure it's always on top and handles dismissal correctly.
@@ -1241,7 +1321,13 @@ def main(page: ft.Page):
         content_padding=10, filled=True,
     )
 
-    search_field = ft.TextField(hint_text="Search packages...", border=ft.InputBorder.NONE, hint_style=ft.TextStyle(color="onSurfaceVariant"), text_style=ft.TextStyle(color="onSurface"), expand=True)
+    search_field = ft.TextField(
+        hint_text="Search packages...", border=ft.InputBorder.NONE,
+        hint_style=ft.TextStyle(color="onSurfaceVariant"), text_style=ft.TextStyle(color="onSurface"), expand=True,
+    )
+
+    # Search Icon Button (Moved outside TextField)
+    search_icon_btn = ft.IconButton(icon=ft.Icons.SEARCH, on_click=lambda e: perform_search(e))
 
     filter_badge_count = ft.Text("0", size=10, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)
     filter_badge_container = ft.Container(content=filter_badge_count, bgcolor=ft.Colors.RED_500, width=16, height=16, border_radius=8, alignment=ft.alignment.center, visible=False, top=0, right=0)
@@ -1343,6 +1429,7 @@ def main(page: ft.Page):
             title = "Favourites"
         elif selected_list_name and selected_list_name in state.saved_lists:
             items = state.saved_lists[selected_list_name]
+            title = selected_list_name
 
         if not items: return
         display_cmd = _build_shell_command_for_items(items, with_wrapper=True)
@@ -1721,7 +1808,13 @@ def main(page: ft.Page):
                 controls=[
                     ft.Row(controls=[
                         channel_dropdown,
-                        ft.Container(content=search_field, bgcolor="surfaceVariant", border_radius=state.get_radius('search'), padding=ft.padding.only(left=15, right=15), expand=True),
+                        ft.Container(
+                            content=ft.Row([search_field, search_icon_btn], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=0),
+                            bgcolor="surfaceVariant",
+                            border_radius=state.get_radius('search'),
+                            padding=ft.padding.only(left=15, right=5),
+                            expand=True
+                        ),
                         ft.Container(content=ft.Stack([ft.IconButton(ft.Icons.FILTER_LIST, on_click=lambda e: toggle_filter_menu(True)), filter_badge_container]))
                     ]),
                     result_count_text,
@@ -1741,13 +1834,17 @@ def main(page: ft.Page):
         if selected_list_name or is_viewing_favourites:
             refresh_list_detail_view()
             title = "Favourites" if is_viewing_favourites else selected_list_name
+
+            # Dynamic Button Text
+            btn_text = f"Try {title} in Shell"
+
             return ft.Container(
                 expand=True,
                 content=ft.Column(controls=[
                     ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[
                         ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=go_back_to_lists_index), ft.Text(title, size=24, weight=ft.FontWeight.BOLD)]),
                         ft.Row([
-                            ft.Container(padding=ft.padding.symmetric(horizontal=12, vertical=8), content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16), ft.Text("Try List in Shell", weight=ft.FontWeight.BOLD)]), on_click=run_list_shell, bgcolor=ft.Colors.BLUE_600, border_radius=state.get_radius('button'), ink=True),
+                            ft.Container(padding=ft.padding.symmetric(horizontal=12, vertical=8), content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text(btn_text, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)]), on_click=run_list_shell, bgcolor=ft.Colors.BLUE_600, border_radius=state.get_radius('button'), ink=True),
                             ft.IconButton(ft.Icons.CONTENT_COPY, on_click=copy_list_command)
                         ])
                     ]),
@@ -1773,9 +1870,9 @@ def main(page: ft.Page):
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 alignment=ft.MainAxisAlignment.CENTER,
                 controls=[
-                    ft.Icon(ft.Icons.HOME_FILLED, size=60, color=ft.Colors.BLUE_200),
-                    ft.Text(f"Hello, {state.username}!", size=32, weight=ft.FontWeight.W_900, color="onSurface"),
-                    ft.Text("Welcome to All Might", size=16, color="onSurfaceVariant"),
+                    ft.Icon(ft.Icons.HOME_FILLED, size=state.get_size(4.0), color=ft.Colors.BLUE_200),
+                    ft.Text(f"Hello, {state.username}!", size=state.get_size(2.3), weight=ft.FontWeight.W_900, color="onSurface"),
+                    ft.Text("Welcome to All Might", size=state.get_size(1.15), color="onSurfaceVariant"),
                 ]
             )
         )
@@ -1794,19 +1891,84 @@ def main(page: ft.Page):
             refresh_dropdown_options()
             show_toast(f"Saved default: {state.default_channel}")
 
-        # Font Size Slider Handler
-        def update_font_size_slider(e):
-            state.font_size = int(e.control.value)
-            state.save_settings()
-            # Live preview update
-            font_preview_text.size = state.get_size(1.0)
-            font_preview_text.update()
+        # Font Logic Handlers
 
-        # When slider release, we refresh the whole view to apply changes globally
-        def on_font_slider_change_end(e):
-            on_nav_change(4) # Refresh settings view completely to redraw layout
-            if navbar_ref[0]: navbar_ref[0]() # Refresh navbar scaling
-            show_toast(f"Font size set to {state.font_size}px")
+        # We need references to the preview elements to update them live without full reload
+        # These are defined here so the handlers can access them
+        preview_text_normal = ft.Text("This is how your text looks.", size=state.get_font_size('body'), color="onSurface")
+        preview_text_small = ft.Text("Small text example", size=state.get_font_size('small'), color="onSurfaceVariant")
+        preview_text_title = ft.Text("Large Header", size=state.get_font_size('title'), weight=ft.FontWeight.BOLD)
+
+        def refresh_fonts():
+            # Optimize refresh: If targeted refresh is available, use it.
+            if settings_refresh_ref[0]:
+                settings_refresh_ref[0]()
+            else:
+                on_nav_change(4) # Fallback to full reload
+
+            if navbar_ref[0]: navbar_ref[0]() # Reload nav bar
+            page.update()
+
+        def update_global_font_live(e):
+            state.global_font_size = int(e.control.value)
+            # Update preview immediately
+            preview_text_normal.size = state.get_font_size('body')
+            preview_text_small.size = state.get_font_size('small')
+            preview_text_title.size = state.get_font_size('title')
+            preview_text_normal.update()
+            preview_text_small.update()
+            preview_text_title.update()
+
+        def save_and_refresh_fonts(e):
+            state.save_settings()
+            refresh_fonts() # This does the optimized reload
+
+        def update_title_font_live(e):
+            state.title_font_size = int(e.control.value)
+            preview_text_title.size = state.get_font_size('title')
+            preview_text_title.update()
+
+        def update_sync_title(e):
+            state.sync_title_font = e.control.value
+            state.save_settings()
+            slider_title_font.disabled = state.sync_title_font
+            slider_title_font.update()
+            refresh_fonts()
+
+        def update_body_font_live(e):
+            state.body_font_size = int(e.control.value)
+            preview_text_normal.size = state.get_font_size('body')
+            preview_text_normal.update()
+
+        def update_sync_body(e):
+            state.sync_body_font = e.control.value
+            state.save_settings()
+            slider_body_font.disabled = state.sync_body_font
+            slider_body_font.update()
+            refresh_fonts()
+
+        def update_small_font_live(e):
+            state.small_font_size = int(e.control.value)
+            preview_text_small.size = state.get_font_size('small')
+            preview_text_small.update()
+
+        def update_sync_small(e):
+            state.sync_small_font = e.control.value
+            state.save_settings()
+            slider_small_font.disabled = state.sync_small_font
+            slider_small_font.update()
+            refresh_fonts()
+
+        def update_nav_font_live(e):
+            state.nav_font_size = int(e.control.value)
+            # Nav doesn't have a preview in the box, but the navbar itself updates on save
+
+        def update_sync_nav_font(e):
+            state.sync_nav_font = e.control.value
+            state.save_settings()
+            slider_nav_font.disabled = state.sync_nav_font
+            slider_nav_font.update()
+            refresh_fonts()
 
         def update_confirm_timer(e):
             state.confirm_timer = int(e.control.value)
@@ -1934,6 +2096,81 @@ def main(page: ft.Page):
             slider_chip_radius.disabled = state.sync_chip_radius
             slider_chip_radius.update()
 
+        # --- Reset Functions ---
+        def reset_with_confirmation(title, default_applier, undo_state_capturer, undo_restorer):
+            old_state = undo_state_capturer()
+            def on_confirm(e):
+                default_applier()
+                state.save_settings()
+                refresh_fonts()
+
+                def on_undo():
+                    undo_restorer(old_state)
+                    state.save_settings()
+                    refresh_fonts()
+
+                show_undo_toast("Reset to defaults", on_undo)
+
+            show_destructive_dialog(title, "Are you sure you want to reset settings to defaults?", on_confirm)
+
+        def reset_radius_defaults(e):
+            def capture():
+                return {
+                    'global': state.global_radius, 'nav': state.nav_radius, 'sync_nav': state.sync_nav_radius,
+                    'card': state.card_radius, 'sync_card': state.sync_card_radius, 'btn': state.button_radius, 'sync_btn': state.sync_button_radius,
+                    'search': state.search_radius, 'sync_search': state.sync_search_radius, 'sel': state.selector_radius, 'sync_sel': state.sync_selector_radius,
+                    'foot': state.footer_radius, 'sync_foot': state.sync_footer_radius, 'chip': state.chip_radius, 'sync_chip': state.sync_chip_radius
+                }
+            def apply():
+                state.global_radius = 33; state.nav_radius = 33; state.sync_nav_radius = True
+                state.card_radius = 15; state.sync_card_radius = True; state.button_radius = 10; state.sync_button_radius = True
+                state.search_radius = 15; state.sync_search_radius = True; state.selector_radius = 15; state.sync_selector_radius = True
+                state.footer_radius = 15; state.sync_footer_radius = True; state.chip_radius = 10; state.sync_chip_radius = True
+            def restore(s):
+                state.global_radius = s['global']; state.nav_radius = s['nav']; state.sync_nav_radius = s['sync_nav']
+                state.card_radius = s['card']; state.sync_card_radius = s['sync_card']; state.button_radius = s['btn']; state.sync_button_radius = s['sync_btn']
+                state.search_radius = s['search']; state.sync_search_radius = s['sync_search']; state.selector_radius = s['sel']; state.sync_selector_radius = s['sync_sel']
+                state.footer_radius = s['foot']; state.sync_footer_radius = s['sync_foot']; state.chip_radius = s['chip']; state.sync_chip_radius = s['sync_chip']
+
+            reset_with_confirmation("Reset Appearance Defaults?", apply, capture, restore)
+
+        def reset_navbar_defaults(e):
+            def capture():
+                return {'float': state.floating_nav, 'adapt': state.adaptive_nav, 'glass': state.glass_nav, 'w': state.nav_bar_width, 'space': state.nav_icon_spacing, 'sync_space': state.sync_nav_spacing, 'badge': state.nav_badge_size}
+            def apply():
+                state.floating_nav = True; state.adaptive_nav = True; state.glass_nav = True
+                state.nav_bar_width = 500; state.nav_icon_spacing = 15; state.sync_nav_spacing = True; state.nav_badge_size = 20
+            def restore(s):
+                state.floating_nav = s['float']; state.adaptive_nav = s['adapt']; state.glass_nav = s['glass']
+                state.nav_bar_width = s['w']; state.nav_icon_spacing = s['space']; state.sync_nav_spacing = s['sync_space']; state.nav_badge_size = s['badge']
+
+            reset_with_confirmation("Reset Navbar Defaults?", apply, capture, restore)
+
+        def reset_timer_defaults(e):
+            def capture(): return {'confirm': state.confirm_timer, 'undo': state.undo_timer}
+            def apply(): state.confirm_timer = 5; state.undo_timer = 5
+            def restore(s): state.confirm_timer = s['confirm']; state.undo_timer = s['undo']
+
+            reset_with_confirmation("Reset Timer Defaults?", apply, capture, restore)
+
+        def reset_font_defaults(e):
+            def capture():
+                return {
+                    'global': state.global_font_size, 'title': state.title_font_size, 'sync_title': state.sync_title_font,
+                    'body': state.body_font_size, 'sync_body': state.sync_body_font, 'small': state.small_font_size, 'sync_small': state.sync_small_font,
+                    'nav': state.nav_font_size, 'sync_nav': state.sync_nav_font
+                }
+            def apply():
+                state.global_font_size = 14; state.title_font_size = 16; state.sync_title_font = True
+                state.body_font_size = 14; state.sync_body_font = True; state.small_font_size = 12; state.sync_small_font = True
+                state.nav_font_size = 12; state.sync_nav_font = True
+            def restore(s):
+                state.global_font_size = s['global']; state.title_font_size = s['title']; state.sync_title_font = s['sync_title']
+                state.body_font_size = s['body']; state.sync_body_font = s['sync_body']; state.small_font_size = s['small']; state.sync_small_font = s['sync_small']
+                state.nav_font_size = s['nav']; state.sync_nav_font = s['sync_nav']
+
+            reset_with_confirmation("Reset Font Defaults?", apply, capture, restore)
+
         def change_settings_category(e):
             category = e.control.data
             settings_ui_state["selected_category"] = category
@@ -1944,8 +2181,12 @@ def main(page: ft.Page):
                  ctrl.content.controls[0].color = col
                  ctrl.content.controls[1].color = col
             settings_nav_rail.update()
-            settings_content_area.content = get_settings_content(category)
-            settings_content_area.update()
+
+            # Switch content using list generator
+            if settings_refresh_ref[0]: # Use the refresh function if available to maintain state
+                settings_refresh_ref[0]()
+            else:
+                update_settings_view()
 
         def update_theme_mode(e):
              val = list(e.control.selected)[0]
@@ -2043,6 +2284,14 @@ def main(page: ft.Page):
         slider_footer_radius = ft.Slider(min=0, max=50, value=state.footer_radius, divisions=50, label="{value}", on_change=update_footer_radius, disabled=state.sync_footer_radius)
         slider_chip_radius = ft.Slider(min=0, max=50, value=state.chip_radius, divisions=50, label="{value}", on_change=update_chip_radius, disabled=state.sync_chip_radius)
 
+        # Font Sliders
+        # We split functionality: update preview on change, save and refresh whole UI on change end
+        slider_global_font = ft.Slider(min=8, max=32, divisions=24, value=state.global_font_size, label="{value}px", on_change=update_global_font_live, on_change_end=save_and_refresh_fonts)
+        slider_title_font = ft.Slider(min=8, max=32, divisions=24, value=state.title_font_size, label="{value}px", on_change=update_title_font_live, on_change_end=save_and_refresh_fonts, disabled=state.sync_title_font)
+        slider_body_font = ft.Slider(min=8, max=32, divisions=24, value=state.body_font_size, label="{value}px", on_change=update_body_font_live, on_change_end=save_and_refresh_fonts, disabled=state.sync_body_font)
+        slider_small_font = ft.Slider(min=8, max=32, divisions=24, value=state.small_font_size, label="{value}px", on_change=update_small_font_live, on_change_end=save_and_refresh_fonts, disabled=state.sync_small_font)
+        slider_nav_font = ft.Slider(min=8, max=32, divisions=24, value=state.nav_font_size, label="{value}px", on_change=update_nav_font_live, on_change_end=save_and_refresh_fonts, disabled=state.sync_nav_font)
+
         username_input = ft.TextField(value=state.username, hint_text="user", width=200, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_username, on_blur=update_username)
         theme_mode_segment = ft.SegmentedButton(selected={state.theme_mode}, segments=[ft.Segment(value="light", label=ft.Text("Light"), icon=ft.Icon(ft.Icons.WB_SUNNY)), ft.Segment(value="dark", label=ft.Text("Dark"), icon=ft.Icon(ft.Icons.NIGHTLIGHT)), ft.Segment(value="system", label=ft.Text("System"), icon=ft.Icon(ft.Icons.SETTINGS_SYSTEM_DAYDREAM))], on_change=update_theme_mode)
         colors_map = {"blue": ft.Colors.BLUE, "purple": ft.Colors.PURPLE, "pink": ft.Colors.PINK, "orange": ft.Colors.ORANGE, "green": ft.Colors.GREEN}
@@ -2051,7 +2300,7 @@ def main(page: ft.Page):
         refresh_channels_list(update_ui=False)
         refresh_cmd_previews()
 
-        nav_items = [("profile", ft.Icons.PERSON, "User Profile"), ("appearance", ft.Icons.PALETTE, "Appearance"), ("typography", ft.Icons.TEXT_FIELDS, "Typography"), ("channels", ft.Icons.LAYERS, "Channel & Search"), ("run_config", ft.Icons.TERMINAL, "Run Configs")]
+        nav_items = [("profile", ft.Icons.PERSON, "User Profile"), ("appearance", ft.Icons.PALETTE, "Appearance"), ("channels", ft.Icons.LAYERS, "Channel & Search"), ("run_config", ft.Icons.TERMINAL, "Run Configs")]
         settings_nav_rail = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO)
         for key, icon, label in nav_items:
             is_sel = (settings_ui_state["selected_category"] == key)
@@ -2059,31 +2308,29 @@ def main(page: ft.Page):
             col = "onSecondaryContainer" if is_sel else "onSurface"
             settings_nav_rail.controls.append(ft.Container(content=ft.Row([ft.Icon(icon, color=col), ft.Text(label, color=col, weight=ft.FontWeight.W_500)], spacing=10), padding=10, border_radius=10, bgcolor=bg, on_click=change_settings_category, data=key, ink=True))
 
-        # Font Preview Text used in Typography section
-        font_preview_text = ft.Text("This is how your text looks.", size=state.get_size(1.0), color="onSurface")
-
-        def get_settings_content(category):
+        def get_settings_controls(category):
+            controls_list = []
             if category == "profile":
-                return GlassContainer(opacity=0.1, padding=20, content=ft.Column([ft.Text("User Profile", size=24, weight=ft.FontWeight.BOLD), ft.Divider(), ft.Text("Customize your user identity within the app."), ft.Container(height=20), ft.Row([ft.Text("Username:", weight=ft.FontWeight.BOLD, color="onSurface", width=100), username_input], alignment=ft.MainAxisAlignment.START)]))
+                controls_list = [GlassContainer(opacity=0.1, padding=20, content=ft.Column([ft.Text("User Profile", size=24, weight=ft.FontWeight.BOLD), ft.Divider(), ft.Text("Customize your user identity within the app."), ft.Container(height=20), ft.Row([ft.Text("Username:", weight=ft.FontWeight.BOLD, color="onSurface", width=100), username_input], alignment=ft.MainAxisAlignment.START)]))]
             elif category == "appearance":
-                return ft.Column(scroll=ft.ScrollMode.HIDDEN, controls=[
+                controls_list = [
                     ft.Text("Appearance", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
                     GlassContainer(opacity=0.1, padding=20, content=ft.Column([ft.Text("Theme", weight=ft.FontWeight.BOLD, size=16), ft.Container(height=10), ft.Text("Mode:", weight=ft.FontWeight.BOLD), theme_mode_segment, ft.Container(height=10), ft.Text("Accent Color:", weight=ft.FontWeight.BOLD), ft.Row(controls=color_controls, spacing=10)])),
                     ft.Container(height=20),
                     GlassContainer(opacity=0.1, padding=20, content=ft.Column([
-                        ft.Text("Radius & Geometry", weight=ft.FontWeight.BOLD, size=16), ft.Container(height=10),
+                        ft.Row([ft.Text("Radius & Geometry", weight=ft.FontWeight.BOLD, size=16), ft.TextButton("Reset to Defaults", on_click=reset_radius_defaults)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), ft.Container(height=10),
                         ft.Text("Global Radius:", weight=ft.FontWeight.BOLD), slider_global_radius,
-                        ft.Row([ft.Text("Nav Bar Radius:"), ft.Switch(value=state.sync_nav_radius, label="Sync", on_change=update_sync_nav_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_nav_radius,
-                        ft.Row([ft.Text("Card Radius:"), ft.Switch(value=state.sync_card_radius, label="Sync", on_change=update_sync_card_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_card_radius,
-                        ft.Row([ft.Text("Button Radius:"), ft.Switch(value=state.sync_button_radius, label="Sync", on_change=update_sync_button_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_button_radius,
-                        ft.Row([ft.Text("Search Bar Radius:"), ft.Switch(value=state.sync_search_radius, label="Sync", on_change=update_sync_search_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_search_radius,
-                        ft.Row([ft.Text("Selector Radius:"), ft.Switch(value=state.sync_selector_radius, label="Sync", on_change=update_sync_selector_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_selector_radius,
-                        ft.Row([ft.Text("Footer Section Radius:"), ft.Switch(value=state.sync_footer_radius, label="Sync", on_change=update_sync_footer_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_footer_radius,
-                        ft.Row([ft.Text("Footer Chip Radius:"), ft.Switch(value=state.sync_chip_radius, label="Sync", on_change=update_sync_chip_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_chip_radius,
+                        ft.Row([ft.Text("Nav Bar Radius:"), ft.Switch(value=state.sync_nav_radius, label="Global", on_change=update_sync_nav_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_nav_radius,
+                        ft.Row([ft.Text("Card Radius:"), ft.Switch(value=state.sync_card_radius, label="Global", on_change=update_sync_card_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_card_radius,
+                        ft.Row([ft.Text("Button Radius:"), ft.Switch(value=state.sync_button_radius, label="Global", on_change=update_sync_button_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_button_radius,
+                        ft.Row([ft.Text("Search Bar Radius:"), ft.Switch(value=state.sync_search_radius, label="Global", on_change=update_sync_search_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_search_radius,
+                        ft.Row([ft.Text("Selector Radius:"), ft.Switch(value=state.sync_selector_radius, label="Global", on_change=update_sync_selector_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_selector_radius,
+                        ft.Row([ft.Text("Footer Section Radius:"), ft.Switch(value=state.sync_footer_radius, label="Global", on_change=update_sync_footer_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_footer_radius,
+                        ft.Row([ft.Text("Footer Chip Radius:"), ft.Switch(value=state.sync_chip_radius, label="Global", on_change=update_sync_chip_radius)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_chip_radius,
                     ])),
                     ft.Container(height=20),
                     GlassContainer(opacity=0.1, padding=20, content=ft.Column([
-                        ft.Text("Navigation Bar", weight=ft.FontWeight.BOLD, size=16), ft.Container(height=10),
+                        ft.Row([ft.Text("Navigation Bar", weight=ft.FontWeight.BOLD, size=16), ft.TextButton("Reset to Defaults", on_click=reset_navbar_defaults)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), ft.Container(height=10),
                         ft.Row([ft.Text("Always Floating:"), ft.Switch(value=state.floating_nav, on_change=update_floating_nav)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                         ft.Row([ft.Text("Adaptive Expansion:"), ft.Switch(value=state.adaptive_nav, on_change=update_adaptive_nav)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                         ft.Text("Total Length (Floating):"), nav_width_slider,
@@ -2092,41 +2339,42 @@ def main(page: ft.Page):
                         ft.Row([ft.Text("Nav Badge Size:"), badge_size_input], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     ])),
                     ft.Container(height=20),
-                    GlassContainer(opacity=0.1, padding=20, content=ft.Column([ft.Text("Timers", weight=ft.FontWeight.BOLD, size=16), ft.Container(height=10), ft.Row([ft.Text("Confirm Dialog (s):"), confirm_timer_input], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), ft.Container(height=10), ft.Row([ft.Text("Undo Toast (s):"), undo_timer_input], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)]))
-                ])
-            elif category == "typography":
-                return ft.Column(scroll=ft.ScrollMode.HIDDEN, controls=[
-                    ft.Text("Typography", size=24, weight=ft.FontWeight.BOLD),
-                    ft.Divider(),
                     GlassContainer(opacity=0.1, padding=20, content=ft.Column([
-                        ft.Text("Base Font Size", weight=ft.FontWeight.BOLD, size=16),
-                        ft.Text("Adjust the global scale of text throughout the application.", size=12, color="onSurfaceVariant"),
-                        ft.Container(height=20),
-                        ft.Slider(min=10, max=30, divisions=20, value=state.font_size, label="{value}px", on_change=update_font_size_slider, on_change_end=on_font_slider_change_end),
+                        ft.Row([ft.Text("Timers", weight=ft.FontWeight.BOLD, size=16), ft.TextButton("Reset to Defaults", on_click=reset_timer_defaults)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), ft.Container(height=10),
+                        ft.Row([ft.Text("Confirm Dialog (s):"), confirm_timer_input], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), ft.Container(height=10), ft.Row([ft.Text("Undo Toast (s):"), undo_timer_input], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)])),
+                    ft.Container(height=20),
+                    GlassContainer(opacity=0.1, padding=20, content=ft.Column([
+                        ft.Row([ft.Text("Fonts", weight=ft.FontWeight.BOLD, size=16), ft.TextButton("Reset to Defaults", on_click=reset_font_defaults)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), ft.Container(height=10),
+                        ft.Text("Global Font Size:", weight=ft.FontWeight.BOLD), slider_global_font,
+                        ft.Divider(),
+                        ft.Row([ft.Text("Title Font Size:"), ft.Switch(value=state.sync_title_font, label="Global", on_change=update_sync_title)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_title_font,
+                        ft.Row([ft.Text("Body Font Size:"), ft.Switch(value=state.sync_body_font, label="Global", on_change=update_sync_body)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_body_font,
+                        ft.Row([ft.Text("Small/Tag Font Size:"), ft.Switch(value=state.sync_small_font, label="Global", on_change=update_sync_small)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_small_font,
+                        ft.Row([ft.Text("Navbar Font Size:"), ft.Switch(value=state.sync_nav_font, label="Global", on_change=update_sync_nav_font)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), slider_nav_font,
                         ft.Container(height=10),
                         ft.Container(
                             padding=20, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), border_radius=10,
                             content=ft.Column([
                                 ft.Text("Live Preview", size=12, color="onSurfaceVariant", weight=ft.FontWeight.BOLD),
                                 ft.Divider(),
-                                font_preview_text,
-                                ft.Text("Small text example", size=state.get_size(0.85), color="onSurfaceVariant"),
-                                ft.Text("Large Header", size=state.get_size(1.5), weight=ft.FontWeight.BOLD),
+                                preview_text_normal,
+                                preview_text_small,
+                                preview_text_title
                             ])
                         )
                     ]))
-                ])
+                ]
             elif category == "channels":
-                return ft.Column(scroll=ft.ScrollMode.HIDDEN, controls=[
+                controls_list = [
                     ft.Text("Channel & Search", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
                     GlassContainer(opacity=0.1, padding=20, content=ft.Column([
                         ft.Text("Search Limit", weight=ft.FontWeight.BOLD), ft.Row([ft.Text("Max results:", size=12), search_limit_input], alignment=ft.MainAxisAlignment.SPACE_BETWEEN), ft.Container(height=20),
                         ft.Text("Default Search Channel", weight=ft.FontWeight.BOLD), ft.Container(height=5), ft.Dropdown(options=[ft.dropdown.Option(c) for c in state.available_channels], value=state.default_channel, on_change=update_default_channel, bgcolor="surfaceVariant", border_color="outline", text_style=ft.TextStyle(color="onSurface"), filled=True), ft.Container(height=20),
                         ft.Text("Available Channels", weight=ft.FontWeight.BOLD), ft.Container(height=10), channels_row, ft.Divider(color=ft.Colors.OUTLINE, height=20), ft.Row([ft.Text("Add Channel:", size=12), new_channel_input, ft.IconButton(ft.Icons.ADD_CIRCLE, icon_color=ft.Colors.GREEN, on_click=add_custom_channel)])
                     ]))
-                ])
+                ]
             elif category == "run_config":
-                return ft.Column(scroll=ft.ScrollMode.HIDDEN, controls=[
+                controls_list = [
                      ft.Text("Run Configurations", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
                      GlassContainer(opacity=0.1, padding=20, content=ft.Column([
                         ft.Text("Run without installing cmd config", weight=ft.FontWeight.BOLD), ft.Container(height=5),
@@ -2136,10 +2384,48 @@ def main(page: ft.Page):
                         ft.Text("Prefix", weight=ft.FontWeight.BOLD), ft.TextField(value=state.shell_cart_prefix, hint_text="nix shell", text_size=12, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_change=update_shell_cart_prefix),
                         ft.Text("Suffix", weight=ft.FontWeight.BOLD), ft.TextField(value=state.shell_cart_suffix, hint_text="", text_size=12, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_change=update_shell_cart_suffix), cmd_preview_cart
                     ]))
-                ])
-            return ft.Container()
+                ]
+            return controls_list
 
-        settings_content_area = ft.Container(expand=True, padding=ft.padding.only(left=20), content=get_settings_content(settings_ui_state["selected_category"]))
+        def update_settings_view():
+            current_cat = settings_ui_state["selected_category"]
+            settings_main_column.controls = get_settings_controls(current_cat)
+
+            # Guard against updating before added to page
+            if settings_main_column.page:
+                # Apply scroll restoration immediately
+                if current_cat == "appearance" and settings_scroll_ref.current:
+                    try:
+                        settings_scroll_ref.current.scroll_to(offset=settings_ui_state.get("scroll_offset", 0), duration=0)
+                    except:
+                        pass
+                else:
+                    if settings_scroll_ref.current:
+                        settings_scroll_ref.current.scroll_to(offset=0, duration=0)
+
+                settings_main_column.update()
+
+        settings_content_area = ft.Container(expand=True, padding=ft.padding.only(left=20), content=settings_main_column)
+
+        # Define refresh function for settings view only to avoid full reload "shake"
+        def refresh_settings_view_only():
+            current_cat = settings_ui_state["selected_category"]
+            settings_main_column.controls = get_settings_controls(current_cat)
+            # Try to restore scroll
+            if current_cat == "appearance" and settings_scroll_ref.current:
+                try:
+                    settings_scroll_ref.current.scroll_to(offset=settings_ui_state.get("scroll_offset", 0), duration=0)
+                except:
+                    pass
+            settings_main_column.update()
+
+        # Expose this function
+        settings_refresh_ref[0] = refresh_settings_view_only
+
+        # Initialize view - but DON'T call update() yet, wait for mount
+        # We manually populate controls but let the first render happen naturally
+        settings_main_column.controls = get_settings_controls(settings_ui_state["selected_category"])
+
         return ft.Container(padding=10, content=ft.Row(spacing=0, vertical_alignment=ft.CrossAxisAlignment.START, controls=[ft.Container(width=200, content=settings_nav_rail, border=ft.border.only(right=ft.border.BorderSide(1, ft.Colors.OUTLINE_VARIANT)), padding=ft.padding.only(right=10)), settings_content_area], expand=True))
 
     content_area = ft.Container(expand=True, padding=20, content=get_home_view())
@@ -2173,6 +2459,9 @@ def main(page: ft.Page):
                 icon_control.name = items[i][1] if is_selected else items[i][0]
                 icon_control.color = active_col if is_selected else inactive_col
                 text_control.color = active_col if is_selected else inactive_col
+
+                # Update Font Size dynamically
+                text_control.size = state.get_font_size('nav')
 
                 actual_btn_container.bgcolor = "secondaryContainer" if is_selected else ft.Colors.TRANSPARENT
 
@@ -2221,7 +2510,7 @@ def main(page: ft.Page):
             inactive_col = ft.Colors.with_opacity(0.6, state.get_base_color())
             return ft.Container(
                 content=ft.Column(
-                    controls=[ft.Icon(name=icon_off, color=inactive_col, size=24), ft.Text(value=label, size=10, color=inactive_col, weight=ft.FontWeight.BOLD)],
+                    controls=[ft.Icon(name=icon_off, color=inactive_col, size=24), ft.Text(value=label, size=state.get_font_size('nav'), color=inactive_col, weight=ft.FontWeight.BOLD)],
                     alignment=ft.MainAxisAlignment.CENTER,
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=0
@@ -2260,6 +2549,10 @@ def main(page: ft.Page):
         return ft.Container(alignment=ft.alignment.center, content=container, padding=ft.padding.only(bottom=10))
 
     def on_nav_change(idx):
+        # Clear settings refresh ref if leaving settings
+        if idx != 4:
+            settings_refresh_ref[0] = None
+
         if idx == 0:
             content_area.content = get_home_view()
         elif idx == 1:
