@@ -5,6 +5,8 @@ import os
 import shlex
 import threading
 import time
+import random
+import datetime
 from collections import Counter
 from pathlib import Path
 
@@ -12,6 +14,77 @@ from pathlib import Path
 APP_NAME = "All Might"
 CONFIG_DIR = os.path.expanduser("~/.config/all-might")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "settings.json")
+
+# --- Mock Data for Daily Digest ---
+DAILY_APPS = [
+    {"pname": "firefox", "desc": "A free and open-source web browser developed by the Mozilla Foundation."},
+    {"pname": "neovim", "desc": "Hyperextensible Vim-based text editor."},
+    {"pname": "htop", "desc": "An interactive process viewer."},
+    {"pname": "git", "desc": "Distributed version control system."},
+    {"pname": "vscode", "desc": "Code editing. Redefined."},
+    {"pname": "vlc", "desc": "The ultimate media player."},
+    {"pname": "obs-studio", "desc": "Free and open source software for video recording and live streaming."},
+    {"pname": "gimp", "desc": "GNU Image Manipulation Program."},
+    {"pname": "ripgrep", "desc": "A line-oriented search tool that recursively searches the current directory."},
+    {"pname": "bat", "desc": "A cat(1) clone with wings."}
+]
+
+DAILY_QUOTES = [
+    {"text": "The computer was born to solve problems that did not exist before.", "author": "Bill Gates"},
+    {"text": "Talk is cheap. Show me the code.", "author": "Linus Torvalds"},
+    {"text": "Software is like sex: it's better when it's free.", "author": "Linus Torvalds"},
+    {"text": "It's not a bug – it's an undocumented feature.", "author": "Anonymous"},
+    {"text": "First, solve the problem. Then, write the code.", "author": "John Johnson"},
+    {"text": "Experience is the name everyone gives to their mistakes.", "author": "Oscar Wilde"}
+]
+
+DAILY_TIPS = [
+    {"title": "Nix Shell", "code": "nix-shell -p python3"},
+    {"title": "Check Config", "code": "nixos-rebuild test"},
+    {"title": "Search", "code": "nix search nixpkgs#firefox"},
+    {"title": "Garbage Collect", "code": "nix-collect-garbage -d"},
+    {"title": "Flake Update", "code": "nix flake update"},
+    {"title": "Repl", "code": "nix repl"},
+    {"title": "List Generations", "code": "nix-env --list-generations"}
+]
+
+DAILY_SONGS = [
+    {"title": "Doin' it Right", "artist": "Daft Punk"},
+    {"title": "Midnight City", "artist": "M83"},
+    {"title": "Instant Crush", "artist": "Daft Punk"},
+    {"title": "Technologic", "artist": "Daft Punk"},
+    {"title": "Computer Love", "artist": "Kraftwerk"},
+    {"title": "Resonance", "artist": "Home"}
+]
+
+CAROUSEL_DATA = [
+    {"title": "New Feature!", "desc": "Check out the new settings page.", "color": ft.Colors.BLUE},
+    {"title": "Nix Tip", "desc": "Use 'nix flake update' often.", "color": ft.Colors.GREEN},
+    {"title": "Community", "desc": "Join the Matrix chat!", "color": ft.Colors.PURPLE},
+    {"title": "Pro Tip", "desc": "Right click for context menus.", "color": ft.Colors.ORANGE},
+]
+
+# Mapping for string color names to Flet colors
+COLOR_NAME_MAP = {
+    "indigo": ft.Colors.INDIGO,
+    "blue": ft.Colors.BLUE,
+    "teal": ft.Colors.TEAL,
+    "green": ft.Colors.GREEN,
+    "amber": ft.Colors.AMBER,
+    "orange": ft.Colors.ORANGE,
+    "red": ft.Colors.RED,
+    "pink": ft.Colors.PINK,
+    "purple": ft.Colors.PURPLE,
+    "blue_grey": ft.Colors.BLUE_GREY
+}
+
+# Default Configuration for Cards
+CARD_DEFAULTS = {
+    "app": {"visible": True, "h": 180, "w": 0, "align": "left", "color": "indigo"},
+    "quote": {"visible": True, "h": 130, "w": 0, "align": "center", "color": "red"},
+    "tip": {"visible": True, "h": 180, "w": 0, "align": "left", "color": "teal"},
+    "song": {"visible": True, "h": 130, "w": 0, "align": "center", "color": "amber"},
+}
 
 # --- Global Callback Reference ---
 global_open_menu_func = None
@@ -77,6 +150,14 @@ class AppState:
         self.nav_font_size = 12
         self.sync_nav_font = True
 
+        # Home Page Settings
+        self.home_card_config = CARD_DEFAULTS.copy()
+        self.carousel_timer = 10
+        self.carousel_glass = True # Default to glassmorphism
+
+        self.daily_indices = {"app": 0, "quote": 0, "tip": 0, "song": 0}
+        self.last_daily_date = ""
+
         # History
         self.recent_activity = []
 
@@ -96,6 +177,19 @@ class AppState:
         self.favourites = []
         self.saved_lists = {}
         self.load_settings()
+        self.update_daily_indices()
+
+    def update_daily_indices(self):
+        today = datetime.date.today().isoformat()
+        if self.last_daily_date != today:
+            self.last_daily_date = today
+            self.daily_indices = {
+                "app": random.randint(0, len(DAILY_APPS) - 1),
+                "quote": random.randint(0, len(DAILY_QUOTES) - 1),
+                "tip": random.randint(0, len(DAILY_TIPS) - 1),
+                "song": random.randint(0, len(DAILY_SONGS) - 1),
+            }
+            self.save_settings()
 
     def load_settings(self):
         if os.path.exists(CONFIG_FILE):
@@ -160,6 +254,28 @@ class AppState:
                     self.nav_font_size = data.get("nav_font_size", 12)
                     self.sync_nav_font = data.get("sync_nav_font", True)
 
+                    # Home Page
+                    saved_card_config = data.get("home_card_config", None)
+                    if saved_card_config:
+                        for k, v in CARD_DEFAULTS.items():
+                            if k not in saved_card_config:
+                                saved_card_config[k] = v
+                            else:
+                                if "color" not in saved_card_config[k]:
+                                    saved_card_config[k]["color"] = v["color"]
+                        self.home_card_config = saved_card_config
+                    else:
+                        self.home_card_config = CARD_DEFAULTS.copy()
+                        if "home_show_app" in data: self.home_card_config["app"]["visible"] = data["home_show_app"]
+                        if "home_show_quote" in data: self.home_card_config["quote"]["visible"] = data["home_show_quote"]
+                        if "home_show_tip" in data: self.home_card_config["tip"]["visible"] = data["home_show_tip"]
+                        if "home_show_song" in data: self.home_card_config["song"]["visible"] = data["home_show_song"]
+
+                    self.daily_indices = data.get("daily_indices", self.daily_indices)
+                    self.last_daily_date = data.get("last_daily_date", "")
+                    self.carousel_timer = data.get("carousel_timer", 10)
+                    self.carousel_glass = data.get("carousel_glass", True)
+
                     self.available_channels = data.get("available_channels", self.available_channels)
                     self.active_channels = data.get("active_channels", self.active_channels)
 
@@ -221,6 +337,12 @@ class AppState:
                 "sync_small_font": self.sync_small_font,
                 "nav_font_size": self.nav_font_size,
                 "sync_nav_font": self.sync_nav_font,
+
+                "home_card_config": self.home_card_config,
+                "daily_indices": self.daily_indices,
+                "last_daily_date": self.last_daily_date,
+                "carousel_timer": self.carousel_timer,
+                "carousel_glass": self.carousel_glass,
 
                 "available_channels": self.available_channels,
                 "active_channels": self.active_channels,
@@ -583,6 +705,156 @@ class UndoToast(ft.Container):
         self.cancelled = True
         if self.on_undo:
             self.on_undo()
+
+class AutoCarousel(ft.Container):
+    def __init__(self, data_list):
+        super().__init__(
+            width=220, height=120,
+            border_radius=15,
+            animate_opacity=300,
+            on_hover=self.handle_hover
+        )
+        self.data_list = data_list
+        self.current_index = 0
+        self.running = False
+        self.paused = False
+
+        # UI Components
+        self.title_text = ft.Text("", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)
+        self.desc_text = ft.Text("", size=12, color=ft.Colors.WHITE70)
+
+        # Border Containers for "Snaking" timer effect
+        self.bar_thickness = 3
+        self.border_bottom = ft.Container(bgcolor="white", height=self.bar_thickness, width=0, bottom=0, left=0)
+        self.border_right = ft.Container(bgcolor="white", width=self.bar_thickness, height=0, bottom=0, right=0)
+        self.border_top = ft.Container(bgcolor="white", height=self.bar_thickness, width=0, top=0, right=0)
+        self.border_left = ft.Container(bgcolor="white", width=self.bar_thickness, height=0, top=0, left=0)
+
+        self.content_container = ft.Container(
+            padding=15,
+            expand=True,
+            content=ft.Column(
+                [self.title_text, self.desc_text],
+                spacing=5,
+                alignment=ft.MainAxisAlignment.CENTER
+            )
+        )
+
+        self.content = ft.Stack(
+            controls=[
+                self.content_container,
+                self.border_bottom,
+                self.border_right,
+                self.border_top,
+                self.border_left
+            ]
+        )
+
+        self.update_content()
+
+    def update_content(self):
+        item = self.data_list[self.current_index]
+
+        # Glassmorphism Logic
+        if state.carousel_glass:
+            self.bgcolor = ft.Colors.with_opacity(0.6, item["color"])
+            self.blur = ft.Blur(15, 15, ft.BlurTileMode.MIRROR)
+            self.border = ft.border.all(1, ft.Colors.with_opacity(0.3, ft.Colors.WHITE))
+        else:
+            self.bgcolor = item["color"]
+            self.blur = None
+            self.border = None
+
+        self.title_text.value = item["title"]
+        self.desc_text.value = item["desc"]
+        if self.page: self.update()
+
+    def did_mount(self):
+        self.running = True
+        threading.Thread(target=self.loop, daemon=True).start()
+
+    def will_unmount(self):
+        self.running = False
+
+    def handle_hover(self, e):
+        if e.data == "true": # Enter hover
+            self.paused = True
+            # Reset bars to full
+            self.set_bars_progress(1.0)
+            self.update_content() # Ensure style matches
+        else: # Exit hover
+            self.paused = False
+            # Thread continues from top loop logic (resets)
+
+    def set_bars_progress(self, progress):
+        # Progress goes from 1.0 (Full) to 0.0 (Empty)
+        # Sequence of vanishing: Bottom-Left -> Bottom-Right -> Top-Right -> Top-Left -> Bottom-Left
+        # 1. Bottom Bar shrinks (1.0 -> 0.75)
+        # 2. Right Bar shrinks (0.75 -> 0.50)
+        # 3. Top Bar shrinks (0.50 -> 0.25)
+        # 4. Left Bar shrinks (0.25 -> 0.0)
+
+        w_total = 220 # Approximate width
+        h_total = 120 # Approximate height
+
+        # Bottom Bar Logic (0 to 0.25 progress chunk, mapped 0-1)
+        if progress > 0.75:
+            p = (progress - 0.75) * 4
+            self.border_bottom.width = w_total * p
+            self.border_right.height = h_total
+            self.border_top.width = w_total
+            self.border_left.height = h_total
+        elif progress > 0.5:
+            p = (progress - 0.5) * 4
+            self.border_bottom.width = 0
+            self.border_right.height = h_total * p
+            self.border_top.width = w_total
+            self.border_left.height = h_total
+        elif progress > 0.25:
+            p = (progress - 0.25) * 4
+            self.border_bottom.width = 0
+            self.border_right.height = 0
+            self.border_top.width = w_total * p
+            self.border_left.height = h_total
+        else:
+            p = progress * 4
+            self.border_bottom.width = 0
+            self.border_right.height = 0
+            self.border_top.width = 0
+            self.border_left.height = h_total * p
+
+        if self.page:
+            self.border_bottom.update()
+            self.border_right.update()
+            self.border_top.update()
+            self.border_left.update()
+
+    def loop(self):
+        step = 0.05
+        while self.running:
+            if self.paused:
+                time.sleep(0.1)
+                continue
+
+            duration = max(1, state.carousel_timer)
+            steps_total = int(duration / step)
+
+            # Start fresh cycle
+            self.set_bars_progress(1.0)
+
+            for i in range(steps_total):
+                if not self.running: return
+                if self.paused: break # Exit loop to restart logic or wait
+
+                time.sleep(step)
+                progress = 1.0 - ((i + 1) / steps_total)
+                self.set_bars_progress(progress)
+
+            if self.paused: continue # Don't switch if paused mid-way
+
+            # Switch Item
+            self.current_index = (self.current_index + 1) % len(self.data_list)
+            self.update_content()
 
 show_toast_global = None
 show_undo_toast_global = None
@@ -1316,8 +1588,10 @@ def main(page: ft.Page):
             items = state.saved_lists[selected_list_name]
 
         if not items: return
-        cmd = _build_shell_command_for_items(items, with_wrapper=False)
-        page.set_clipboard(cmd)
+        tooltip_cmd = _build_shell_command_for_items(items, with_wrapper=True)
+        clean_cmd = _build_shell_command_for_items(items, with_wrapper=False)
+
+        page.set_clipboard(clean_cmd)
         show_toast(f"Copied List Command")
 
     def save_cart_as_list(e):
@@ -1646,18 +1920,14 @@ def main(page: ft.Page):
             title = "Favourites" if is_viewing_favourites else selected_list_name
             btn_text = f"Try {title} in Shell"
 
-            # Calculate tooltip command
             items_for_tooltip = []
             if is_viewing_favourites:
                 items_for_tooltip = state.favourites
             elif selected_list_name and selected_list_name in state.saved_lists:
                 items_for_tooltip = state.saved_lists[selected_list_name]
 
-            tooltip_cmd = ""
-            clean_cmd = "Copy Command"
-            if items_for_tooltip:
-                tooltip_cmd = _build_shell_command_for_items(items_for_tooltip, with_wrapper=True)
-                clean_cmd = _build_shell_command_for_items(items_for_tooltip, with_wrapper=False)
+            tooltip_cmd = _build_shell_command_for_items(items_for_tooltip, with_wrapper=True) if items_for_tooltip else ""
+            clean_cmd = _build_shell_command_for_items(items_for_tooltip, with_wrapper=False) if items_for_tooltip else ""
 
             return ft.Container(
                 expand=True,
@@ -1691,18 +1961,325 @@ def main(page: ft.Page):
                 ])
             )
 
-    def get_home_view():
-        return ft.Container(
-            expand=True,
-            alignment=ft.alignment.center,
-            content=ft.Column(
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                alignment=ft.MainAxisAlignment.CENTER,
+    class AutoCarousel(ft.Container):
+        def __init__(self, data_list):
+            super().__init__(
+                width=220, height=120,
+                border_radius=15,
+                animate_opacity=300,
+                on_hover=self.handle_hover
+            )
+            self.data_list = data_list
+            self.current_index = 0
+            self.running = False
+            self.paused = False
+
+            self.title_text = ft.Text("", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)
+            self.desc_text = ft.Text("", size=12, color=ft.Colors.WHITE70)
+
+            self.bar_thickness = 3
+            self.border_bottom = ft.Container(bgcolor="white", height=self.bar_thickness, width=0, bottom=0, left=0)
+            self.border_right = ft.Container(bgcolor="white", width=self.bar_thickness, height=0, bottom=0, right=0)
+            self.border_top = ft.Container(bgcolor="white", height=self.bar_thickness, width=0, top=0, right=0)
+            self.border_left = ft.Container(bgcolor="white", width=self.bar_thickness, height=0, top=0, left=0)
+
+            self.content_container = ft.Container(
+                padding=15,
+                expand=True,
+                content=ft.Column(
+                    [self.title_text, self.desc_text],
+                    spacing=5,
+                    alignment=ft.MainAxisAlignment.CENTER
+                )
+            )
+
+            self.content = ft.Stack(
                 controls=[
-                    ft.Icon(ft.Icons.HOME_FILLED, size=state.get_size(4.0), color=ft.Colors.BLUE_200),
+                    self.content_container,
+                    self.border_bottom,
+                    self.border_right,
+                    self.border_top,
+                    self.border_left
+                ]
+            )
+
+            self.update_content()
+
+        def update_content(self):
+            item = self.data_list[self.current_index]
+
+            if state.carousel_glass:
+                self.bgcolor = ft.Colors.with_opacity(0.6, item["color"])
+                self.blur = ft.Blur(15, 15, ft.BlurTileMode.MIRROR)
+                self.border = ft.border.all(1, ft.Colors.with_opacity(0.3, ft.Colors.WHITE))
+            else:
+                self.bgcolor = item["color"]
+                self.blur = None
+                self.border = None
+
+            self.title_text.value = item["title"]
+            self.desc_text.value = item["desc"]
+            if self.page: self.update()
+
+        def did_mount(self):
+            self.running = True
+            threading.Thread(target=self.loop, daemon=True).start()
+
+        def will_unmount(self):
+            self.running = False
+
+        def handle_hover(self, e):
+            if e.data == "true":
+                self.paused = True
+                self.set_bars_progress(1.0)
+                self.update_content()
+            else:
+                self.paused = False
+
+        def set_bars_progress(self, progress):
+            w_total = 220
+            h_total = 120
+
+            if progress > 0.75:
+                p = (progress - 0.75) * 4
+                self.border_bottom.width = w_total * p
+                self.border_right.height = h_total
+                self.border_top.width = w_total
+                self.border_left.height = h_total
+            elif progress > 0.5:
+                p = (progress - 0.5) * 4
+                self.border_bottom.width = 0
+                self.border_right.height = h_total * p
+                self.border_top.width = w_total
+                self.border_left.height = h_total
+            elif progress > 0.25:
+                p = (progress - 0.25) * 4
+                self.border_bottom.width = 0
+                self.border_right.height = 0
+                self.border_top.width = w_total * p
+                self.border_left.height = h_total
+            else:
+                p = progress * 4
+                self.border_bottom.width = 0
+                self.border_right.height = 0
+                self.border_top.width = 0
+                self.border_left.height = h_total * p
+
+            if self.page:
+                self.border_bottom.update()
+                self.border_right.update()
+                self.border_top.update()
+                self.border_left.update()
+
+        def loop(self):
+            step = 0.05
+            while self.running:
+                if self.paused:
+                    time.sleep(0.1)
+                    continue
+
+                duration = max(1, state.carousel_timer)
+                steps_total = int(duration / step)
+
+                self.set_bars_progress(1.0)
+
+                for i in range(steps_total):
+                    if not self.running: return
+                    if self.paused: break
+
+                    time.sleep(step)
+                    progress = 1.0 - ((i + 1) / steps_total)
+                    self.set_bars_progress(progress)
+
+                if self.paused: continue
+
+                self.current_index = (self.current_index + 1) % len(self.data_list)
+                self.update_content()
+
+    def create_stacked_card(content, base_color, width=None, height=None, expand=1):
+        container_width = width if width and width > 0 else None
+        container_expand = expand if (not width or width == 0) else 0
+
+        layer1 = ft.Container(
+            bgcolor=ft.Colors.with_opacity(0.3, base_color),
+            border_radius=20,
+            border=ft.border.all(1, ft.Colors.with_opacity(0.1, ft.Colors.WHITE)),
+            rotate=ft.Rotate(0.12, alignment=ft.alignment.center),
+            scale=0.92,
+            left=0, right=0, top=0, bottom=0,
+        )
+
+        layer2 = ft.Container(
+            bgcolor=ft.Colors.with_opacity(0.6, base_color),
+            border_radius=20,
+            border=ft.border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE)),
+            rotate=ft.Rotate(0.06, alignment=ft.alignment.center),
+            scale=0.96,
+            left=0, right=0, top=0, bottom=0,
+        )
+
+        content.left = 0
+        content.right = 0
+        content.top = 0
+        content.bottom = 0
+
+        return ft.Container(
+            expand=container_expand,
+            width=container_width,
+            height=height,
+            content=ft.Stack(
+                controls=[
+                    layer1,
+                    layer2,
+                    content
+                ]
+            )
+        )
+
+    def get_home_view():
+        state.update_daily_indices()
+
+        app_data = DAILY_APPS[state.daily_indices["app"] % len(DAILY_APPS)]
+        quote_data = DAILY_QUOTES[state.daily_indices["quote"] % len(DAILY_QUOTES)]
+        tip_data = DAILY_TIPS[state.daily_indices["tip"] % len(DAILY_TIPS)]
+        song_data = DAILY_SONGS[state.daily_indices["song"] % len(DAILY_SONGS)]
+
+        # --- Daily Digest Cards ---
+        cards_row1 = []
+        cards_row2 = []
+
+        def get_cfg(key):
+            return state.home_card_config.get(key, CARD_DEFAULTS[key])
+
+        def get_alignment(align_str):
+            if align_str == "left": return ft.MainAxisAlignment.START
+            if align_str == "right": return ft.MainAxisAlignment.END
+            return ft.MainAxisAlignment.CENTER
+
+        def get_card_color(color_name):
+            return COLOR_NAME_MAP.get(color_name, ft.Colors.BLUE)
+
+        # Build App Card
+        cfg = get_cfg("app")
+        if cfg["visible"]:
+            base_col = get_card_color(cfg["color"])
+            main_card = GlassContainer(
+                padding=20, border_radius=20,
+                bgcolor=ft.Colors.with_opacity(0.9, base_col),
+                content=ft.Column(
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    horizontal_alignment=ft.CrossAxisAlignment.START,
+                    controls=[
+                        ft.Row([ft.Text("Random App of the Day", size=12, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
+                        ft.Row([ft.Text(app_data["pname"], size=32, color=ft.Colors.WHITE, weight=ft.FontWeight.W_900)], alignment=get_alignment(cfg["align"])),
+                        ft.Row([ft.Text(app_data["desc"], size=12, color=ft.Colors.WHITE70, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS, text_align=ft.TextAlign.LEFT if cfg["align"] == "left" else (ft.TextAlign.RIGHT if cfg["align"] == "right" else ft.TextAlign.CENTER))], alignment=get_alignment(cfg["align"])),
+                    ]
+                )
+            )
+            cards_row1.append(create_stacked_card(main_card, base_col, height=cfg["h"], width=cfg["w"], expand=2))
+
+        # Build Tip Card
+        cfg = get_cfg("tip")
+        if cfg["visible"]:
+            base_col = get_card_color(cfg["color"])
+            main_card = GlassContainer(
+                padding=15, border_radius=20,
+                bgcolor=ft.Colors.with_opacity(0.9, base_col),
+                content=ft.Column(
+                    controls=[
+                        ft.Row([ft.Text("Nix Random Tip", size=12, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
+                        ft.Container(height=10),
+                        ft.Row([ft.Text(tip_data["title"], size=16, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
+                        ft.Container(
+                            bgcolor=ft.Colors.BLACK26, padding=10, border_radius=8,
+                            content=ft.Text(tip_data["code"], font_family="monospace", size=12, color=ft.Colors.GREEN_100),
+                            alignment=ft.alignment.center_left if cfg["align"] == "left" else (ft.alignment.center_right if cfg["align"] == "right" else ft.alignment.center)
+                        )
+                    ]
+                )
+            )
+            cards_row1.append(create_stacked_card(main_card, base_col, height=cfg["h"], width=cfg["w"], expand=1))
+
+        # Build Quote Card
+        cfg = get_cfg("quote")
+        if cfg["visible"]:
+            base_col = get_card_color(cfg["color"])
+            main_card = GlassContainer(
+                padding=15, border_radius=20,
+                bgcolor=ft.Colors.with_opacity(0.9, base_col),
+                content=ft.Column(
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    controls=[
+                        ft.Row([ft.Text("Quote of the Day", size=10, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
+                        ft.Text(f'"{quote_data["text"]}"', size=13, color=ft.Colors.WHITE, italic=True, text_align=ft.TextAlign.LEFT if cfg["align"] == "left" else (ft.TextAlign.RIGHT if cfg["align"] == "right" else ft.TextAlign.CENTER)),
+                        ft.Row([ft.Text(f"- {quote_data['author']}", size=11, color=ft.Colors.WHITE70)], alignment=ft.MainAxisAlignment.END if cfg["align"] == "right" else (ft.MainAxisAlignment.START if cfg["align"] == "left" else ft.MainAxisAlignment.CENTER))
+                    ]
+                )
+            )
+            cards_row2.append(create_stacked_card(main_card, base_col, height=cfg["h"], width=cfg["w"], expand=1))
+
+        # Build Song Card
+        cfg = get_cfg("song")
+        if cfg["visible"]:
+            base_col = get_card_color(cfg["color"])
+            main_card = GlassContainer(
+                padding=15, border_radius=20,
+                bgcolor=ft.Colors.with_opacity(0.9, base_col),
+                content=ft.Column(
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    controls=[
+                        ft.Row([ft.Text("Song of the Day", size=10, color=ft.Colors.BLACK54, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
+                        ft.Row([ft.Icon(ft.Icons.MUSIC_NOTE, size=30, color=ft.Colors.BLACK87)], alignment=get_alignment(cfg["align"])),
+                        ft.Row([ft.Text(song_data["title"], size=16, color=ft.Colors.BLACK87, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
+                        ft.Row([ft.Text(song_data["artist"], size=12, color=ft.Colors.BLACK54)], alignment=get_alignment(cfg["align"]))
+                    ]
+                )
+            )
+            cards_row2.append(create_stacked_card(main_card, base_col, height=cfg["h"], width=cfg["w"], expand=1))
+
+        carousel_widget = AutoCarousel(CAROUSEL_DATA)
+
+        controls = []
+
+        header_row = ft.Row(
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+            controls=[
+                ft.Column([
+                    ft.Row([ft.Icon(ft.Icons.HOME_FILLED, size=state.get_size(4.0), color=ft.Colors.BLUE_200)], alignment=ft.MainAxisAlignment.START),
                     ft.Text(f"Hello, {state.username}!", size=state.get_size(2.3), weight=ft.FontWeight.W_900, color="onSurface"),
                     ft.Text("Welcome to All Might", size=state.get_size(1.15), color="onSurfaceVariant"),
-                ]
+                ]),
+                ft.Container(
+                    width=300,
+                    content=ft.Column([
+                        ft.Text("Updates", size=12, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"),
+                        carousel_widget
+                    ])
+                )
+            ]
+        )
+        controls.append(header_row)
+
+        if cards_row1 or cards_row2:
+            controls.append(ft.Container(height=30))
+            controls.append(ft.Text("Daily Digest", size=18, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"))
+            controls.append(ft.Container(height=10))
+
+            if cards_row1:
+                controls.append(ft.Row(controls=cards_row1, spacing=20, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START))
+            if cards_row2:
+                controls.append(ft.Container(height=40))
+                controls.append(ft.Row(controls=cards_row2, spacing=20, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START))
+
+        return ft.Container(
+            expand=True,
+            alignment=ft.alignment.top_left,
+            padding=ft.padding.only(top=40, left=30, right=30, bottom=20),
+            content=ft.Column(
+                horizontal_alignment=ft.CrossAxisAlignment.START,
+                controls=controls,
+                scroll=ft.ScrollMode.AUTO
             )
         )
 
@@ -1995,18 +2572,37 @@ def main(page: ft.Page):
             slider_chip_radius.disabled = state.sync_chip_radius
             slider_chip_radius.update()
 
+        def update_carousel_timer(e):
+            try:
+                val = int(e.control.value)
+                state.carousel_timer = val
+                state.save_settings()
+            except:
+                pass
+
+        def update_carousel_glass(e):
+            state.carousel_glass = e.control.value
+            state.save_settings()
+
         # --- Reset Functions ---
         def reset_with_confirmation(title, default_applier, undo_state_capturer, undo_restorer):
             old_state = undo_state_capturer()
             def on_confirm(e):
                 default_applier()
                 state.save_settings()
-                refresh_fonts()
+
+                if "home" in title.lower():
+                    if settings_refresh_ref[0]: settings_refresh_ref[0]()
+                else:
+                    refresh_fonts()
 
                 def on_undo():
                     undo_restorer(old_state)
                     state.save_settings()
-                    refresh_fonts()
+                    if "home" in title.lower():
+                        if settings_refresh_ref[0]: settings_refresh_ref[0]()
+                    else:
+                        refresh_fonts()
 
                 show_undo_toast("Reset to defaults", on_undo)
 
@@ -2021,13 +2617,11 @@ def main(page: ft.Page):
                     'foot': state.footer_radius, 'sync_foot': state.sync_footer_radius, 'chip': state.chip_radius, 'sync_chip': state.sync_chip_radius
                 }
             def apply():
-                # Update State
                 state.global_radius = 33; state.nav_radius = 33; state.sync_nav_radius = True
                 state.card_radius = 15; state.sync_card_radius = True; state.button_radius = 10; state.sync_button_radius = True
                 state.search_radius = 15; state.sync_search_radius = True; state.selector_radius = 15; state.sync_selector_radius = True
                 state.footer_radius = 15; state.sync_footer_radius = True; state.chip_radius = 10; state.sync_chip_radius = True
 
-                # Explicitly update Slider controls AND their Text labels
                 slider_global_radius.value = 33
                 txt_global_radius.value = get_label_text("Global Radius", 33, 33)
 
@@ -2120,185 +2714,132 @@ def main(page: ft.Page):
 
             reset_with_confirmation("Reset Font Defaults?", apply, capture, restore)
 
-        def change_settings_category(e):
-            category = e.control.data
-            settings_ui_state["selected_category"] = category
-            for ctrl in settings_nav_rail.controls:
-                 is_selected = (ctrl.data == category)
-                 ctrl.bgcolor = "secondaryContainer" if is_selected else ft.Colors.TRANSPARENT
-                 col = "onSecondaryContainer" if is_selected else "onSurface"
-                 ctrl.content.controls[0].color = col
-                 ctrl.content.controls[1].color = col
-            settings_nav_rail.update()
+        # --- Home Page Config Helper ---
+        def create_card_config_tile(card_key, label):
+            default = CARD_DEFAULTS[card_key]
+            cfg = state.home_card_config.get(card_key, default.copy())
 
-            if settings_refresh_ref[0]:
-                settings_refresh_ref[0]()
-            else:
-                update_settings_view()
+            txt_height = ft.Text(get_label_text("Height (px)", cfg["h"], default["h"]))
+            txt_width = ft.Text(get_label_text("Width (px) [0 = Auto]", cfg["w"], default["w"]))
 
-        def update_theme_mode(e):
-             val = list(e.control.selected)[0]
-             state.theme_mode = val
-             state.save_settings()
-             page.theme_mode = ft.ThemeMode.DARK if val == "dark" else (ft.ThemeMode.LIGHT if val == "light" else ft.ThemeMode.SYSTEM)
-             page.update()
-             show_toast(f"Theme mode: {val}")
-             on_nav_change(4)
-             if navbar_ref[0]: navbar_ref[0]()
+            def update_visible(e):
+                state.home_card_config[card_key]["visible"] = e.control.value
+                state.save_settings()
 
-        def update_theme_color(e):
-             state.theme_color = e.control.data
-             state.save_settings()
-             page.theme = ft.Theme(color_scheme_seed=state.theme_color)
-             page.update()
-             show_toast(f"Theme color: {state.theme_color}")
-             on_nav_change(4)
-             if navbar_ref[0]: navbar_ref[0]()
+            def update_height(e):
+                val = int(e.control.value)
+                state.home_card_config[card_key]["h"] = val
+                txt_height.value = get_label_text("Height (px)", val, default["h"])
+                txt_height.update()
+                state.save_settings()
 
-        def update_shell_single_prefix(e):
-            state.shell_single_prefix = e.control.value
-            state.save_settings()
-            refresh_cmd_previews()
+            def update_width(e):
+                val = int(e.control.value)
+                state.home_card_config[card_key]["w"] = val
+                txt_width.value = get_label_text("Width (px) [0 = Auto]", val, default["w"])
+                txt_width.update()
+                state.save_settings()
 
-        def update_shell_single_suffix(e):
-            state.shell_single_suffix = e.control.value
-            state.save_settings()
-            refresh_cmd_previews()
+            def update_align(e):
+                val = list(e.control.selected)[0]
+                state.home_card_config[card_key]["align"] = val
+                state.save_settings()
 
-        def update_shell_cart_prefix(e):
-            state.shell_cart_prefix = e.control.value
-            state.save_settings()
-            refresh_cmd_previews()
+            def update_card_color(e):
+                val = e.control.data
+                state.home_card_config[card_key]["color"] = val
+                state.save_settings()
+                for ctrl in color_row.controls:
+                    is_sel = (ctrl.data == val)
+                    ctrl.border = ft.border.all(2, "white") if is_sel else ft.border.all(2, ft.Colors.TRANSPARENT)
+                color_row.update()
 
-        def update_shell_cart_suffix(e):
-            state.shell_cart_suffix = e.control.value
-            state.save_settings()
-            refresh_cmd_previews()
+            def reset_card_defaults(e):
+                def capture():
+                    return state.home_card_config[card_key].copy()
 
-        cmd_preview_single = ft.Text(size=12, font_family="monospace", color=ft.Colors.GREEN)
-        cmd_preview_cart = ft.Text(size=12, font_family="monospace", color=ft.Colors.GREEN)
+                def apply():
+                    state.home_card_config[card_key] = default.copy()
 
-        def refresh_cmd_previews():
-             cmd_preview_single.value = f"Example: {state.shell_single_prefix.strip()} nix run ... {state.shell_single_suffix.strip()}".strip()
-             cmd_preview_cart.value = f"Example: {state.shell_cart_prefix.strip()} nix shell ... {state.shell_cart_suffix.strip()}".strip()
-             if cmd_preview_single.page: cmd_preview_single.update()
-             if cmd_preview_cart.page: cmd_preview_cart.update()
+                    switch_visible.value = default["visible"]
+                    slider_height.value = default["h"]
+                    txt_height.value = get_label_text("Height (px)", default["h"], default["h"])
 
-        def request_delete_channel(e):
-            channel_to_delete = e.control.data
-            dlg_ref = [None]
-            def on_confirm(e):
-                state.remove_channel(channel_to_delete)
-                refresh_channels_list()
-                refresh_dropdown_options()
-                page.close(dlg_ref[0])
-            dlg = ft.AlertDialog(modal=True, title=ft.Text("Confirm Deletion"), content=ft.Text(f"Remove '{channel_to_delete}'?"), actions=[ft.TextButton("Yes", on_click=on_confirm), ft.TextButton("No", on_click=lambda e: page.close(dlg_ref[0]))])
-            dlg_ref[0] = dlg
-            page.open(dlg)
+                    slider_width.value = default["w"]
+                    txt_width.value = get_label_text("Width (px) [0 = Auto]", default["w"], default["w"])
 
-        def refresh_channels_list(update_ui=True):
-            channels_row.controls.clear()
-            for ch in state.available_channels:
-                channels_row.controls.append(ft.Container(bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), padding=ft.padding.only(left=5, right=5, top=5, bottom=5), border_radius=5, width=210, content=ft.Row(alignment=ft.MainAxisAlignment.START, spacing=2, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[ft.Checkbox(value=(ch in state.active_channels), on_change=lambda e, c=ch: state.toggle_channel(c, e.control.value) or refresh_dropdown_options()), ft.Container(content=ft.Text(ch, size=12, no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS, weight=ft.FontWeight.BOLD, color="onSurface"), expand=True), ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, icon_color=ft.Colors.RED_400, icon_size=18, data=ch, on_click=request_delete_channel, width=24, style=ft.ButtonStyle(padding=0))])))
-            if update_ui and channels_row.page: channels_row.update()
+                    seg_align.selected = {default["align"]}
 
-        def add_custom_channel(e):
-            if new_channel_input.value:
-                val = new_channel_input.value.strip()
-                val = f"nixos-{val}" if not val.startswith("nixos-") and not val.startswith("nixpkgs-") else val
-                if state.add_channel(val):
-                    refresh_channels_list()
-                    refresh_dropdown_options()
-                    new_channel_input.value = ""
-                    new_channel_input.update()
+                    for ctrl in color_row.controls:
+                        ctrl.border = ft.border.all(2, "white") if ctrl.data == default["color"] else ft.border.all(2, ft.Colors.TRANSPARENT)
 
-        new_channel_input = ft.TextField(hint_text="e.g. 23.11", width=150, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"))
+                    if settings_main_column.page:
+                        switch_visible.update()
+                        slider_height.update()
+                        txt_height.update()
+                        slider_width.update()
+                        txt_width.update()
+                        seg_align.update()
+                        color_row.update()
 
-        confirm_timer_input = ft.TextField(value=str(state.confirm_timer), hint_text="Default: 5", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_confirm_timer, on_blur=update_confirm_timer)
-        undo_timer_input = ft.TextField(value=str(state.undo_timer), hint_text="Default: 5", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_undo_timer, on_blur=update_undo_timer)
-        badge_size_input = ft.TextField(value=str(state.nav_badge_size), hint_text="Default: 20", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_badge_size, on_blur=update_badge_size)
-        search_limit_input = ft.TextField(value=str(state.search_limit), hint_text="Default: 30", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_search_limit, on_blur=update_search_limit)
+                def restore(s):
+                    state.home_card_config[card_key] = s
 
-        nav_width_slider = ft.Slider(min=200, max=600, value=state.nav_bar_width, divisions=40, label="{value}", on_change=update_nav_width)
-        nav_spacing_slider = ft.Slider(min=0, max=50, value=state.nav_icon_spacing, divisions=50, label="{value}", on_change=update_icon_spacing, disabled=state.sync_nav_spacing)
+                reset_with_confirmation(f"Reset {label}?", apply, capture, restore)
 
-        # Radius Sliders
-        slider_global_radius = ft.Slider(min=0, max=50, value=state.global_radius, divisions=50, label="{value}", on_change=update_global_radius)
-        slider_nav_radius = ft.Slider(min=0, max=50, value=state.nav_radius, divisions=50, label="{value}", on_change=update_nav_radius, disabled=state.sync_nav_radius)
-        slider_card_radius = ft.Slider(min=0, max=50, value=state.card_radius, divisions=50, label="{value}", on_change=update_card_radius, disabled=state.sync_card_radius)
-        slider_button_radius = ft.Slider(min=0, max=50, value=state.button_radius, divisions=50, label="{value}", on_change=update_button_radius, disabled=state.sync_button_radius)
-        slider_search_radius = ft.Slider(min=0, max=50, value=state.search_radius, divisions=50, label="{value}", on_change=update_search_radius, disabled=state.sync_search_radius)
-        slider_selector_radius = ft.Slider(min=0, max=50, value=state.selector_radius, divisions=50, label="{value}", on_change=update_selector_radius, disabled=state.sync_selector_radius)
-        slider_footer_radius = ft.Slider(min=0, max=50, value=state.footer_radius, divisions=50, label="{value}", on_change=update_footer_radius, disabled=state.sync_footer_radius)
-        slider_chip_radius = ft.Slider(min=0, max=50, value=state.chip_radius, divisions=50, label="{value}", on_change=update_chip_radius, disabled=state.sync_chip_radius)
+            switch_visible = ft.Switch(value=cfg["visible"], on_change=update_visible)
+            slider_height = ft.Slider(min=100, max=400, value=cfg["h"], label="{value}", on_change=update_height)
+            slider_width = ft.Slider(min=0, max=600, value=cfg["w"], label="{value}", on_change=update_width)
+            seg_align = ft.SegmentedButton(
+                selected={cfg["align"]},
+                on_change=update_align,
+                segments=[
+                    ft.Segment(value="left", label=ft.Text("Left"), icon=ft.Icon(ft.Icons.FORMAT_ALIGN_LEFT)),
+                    ft.Segment(value="center", label=ft.Text("Center"), icon=ft.Icon(ft.Icons.FORMAT_ALIGN_CENTER)),
+                    ft.Segment(value="right", label=ft.Text("Right"), icon=ft.Icon(ft.Icons.FORMAT_ALIGN_RIGHT)),
+                ]
+            )
 
-        # Font Sliders
-        slider_global_font = ft.Slider(min=8, max=32, divisions=24, value=state.global_font_size, label="{value}px", on_change=update_global_font_live, on_change_end=save_and_refresh_fonts)
-        slider_title_font = ft.Slider(min=8, max=32, divisions=24, value=state.title_font_size, label="{value}px", on_change=update_title_font_live, on_change_end=save_and_refresh_fonts, disabled=state.sync_title_font)
-        slider_body_font = ft.Slider(min=8, max=32, divisions=24, value=state.body_font_size, label="{value}px", on_change=update_body_font_live, on_change_end=save_and_refresh_fonts, disabled=state.sync_body_font)
-        slider_small_font = ft.Slider(min=8, max=32, divisions=24, value=state.small_font_size, label="{value}px", on_change=update_small_font_live, on_change_end=save_and_refresh_fonts, disabled=state.sync_small_font)
-        slider_nav_font = ft.Slider(min=8, max=32, divisions=24, value=state.nav_font_size, label="{value}px", on_change=update_nav_font_live, on_change_end=save_and_refresh_fonts, disabled=state.sync_nav_font)
-
-        username_input = ft.TextField(value=state.username, hint_text="user", width=200, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_username, on_blur=update_username)
-        theme_mode_segment = ft.SegmentedButton(selected={state.theme_mode}, segments=[ft.Segment(value="light", label=ft.Text("Light"), icon=ft.Icon(ft.Icons.WB_SUNNY)), ft.Segment(value="dark", label=ft.Text("Dark"), icon=ft.Icon(ft.Icons.NIGHTLIGHT)), ft.Segment(value="system", label=ft.Text("System"), icon=ft.Icon(ft.Icons.SETTINGS_SYSTEM_DAYDREAM))], on_change=update_theme_mode)
-        colors_map = {"blue": ft.Colors.BLUE, "purple": ft.Colors.PURPLE, "pink": ft.Colors.PINK, "orange": ft.Colors.ORANGE, "green": ft.Colors.GREEN}
-        color_controls = [ft.Container(width=30, height=30, border_radius=15, bgcolor=color_code, border=ft.border.all(2, "onSurface" if state.theme_color == name else ft.Colors.TRANSPARENT), on_click=update_theme_color, data=name, ink=True, tooltip=name.capitalize()) for name, color_code in colors_map.items()]
-
-        refresh_channels_list(update_ui=False)
-        refresh_cmd_previews()
-
-        nav_items = [("profile", ft.Icons.PERSON, "User Profile"), ("appearance", ft.Icons.PALETTE, "Appearance"), ("channels", ft.Icons.LAYERS, "Channel & Search"), ("run_config", ft.Icons.TERMINAL, "Run Configs")]
-        settings_nav_rail = ft.Column(spacing=5, scroll=ft.ScrollMode.AUTO)
-        for key, icon, label in nav_items:
-            is_sel = (settings_ui_state["selected_category"] == key)
-            bg = "secondaryContainer" if is_sel else ft.Colors.TRANSPARENT
-            col = "onSecondaryContainer" if is_sel else "onSurface"
-            settings_nav_rail.controls.append(ft.Container(content=ft.Row([ft.Icon(icon, color=col), ft.Text(label, color=col, weight=ft.FontWeight.W_500)], spacing=10), padding=10, border_radius=10, bgcolor=bg, on_click=change_settings_category, data=key, ink=True))
-
-        def make_settings_tile(title, content_controls, reset_func=None):
-            tile_content = []
-            if reset_func:
-                tile_content.append(
-                    ft.Row(
-                        alignment=ft.MainAxisAlignment.END,
-                        controls=[
-                            ft.TextButton(
-                                "Reset to Defaults",
-                                icon=ft.Icons.RESTORE,
-                                icon_color=ft.Colors.RED_200,
-                                style=ft.ButtonStyle(color=ft.Colors.RED_200),
-                                on_click=reset_func
-                            )
-                        ]
+            color_controls = []
+            for name, code in COLOR_NAME_MAP.items():
+                is_selected = (name == cfg.get("color", default["color"]))
+                color_controls.append(
+                    ft.Container(
+                        width=30, height=30, border_radius=15, bgcolor=code,
+                        border=ft.border.all(2, "white") if is_selected else ft.border.all(2, ft.Colors.TRANSPARENT),
+                        on_click=update_card_color, data=name, ink=True, tooltip=name.capitalize()
                     )
                 )
-                tile_content.append(ft.Divider(height=10, color=ft.Colors.with_opacity(0.2, "onSurface")))
+            color_row = ft.Row(controls=color_controls, spacing=10, wrap=True)
 
-            tile_content.extend(content_controls)
-
-            return GlassContainer(
-                opacity=0.1,
-                padding=0,
-                content=ft.ExpansionTile(
-                    title=ft.Text(title, weight=ft.FontWeight.BOLD, size=16),
-                    controls=[
-                        ft.Container(
-                            padding=ft.padding.only(left=20, right=20, bottom=20),
-                            content=ft.Column(tile_content, spacing=10)
-                        )
-                    ],
-                    initially_expanded=False,
-                    shape=ft.RoundedRectangleBorder(radius=state.get_radius('card')),
-                    collapsed_shape=ft.RoundedRectangleBorder(radius=state.get_radius('card')),
-                    tile_padding=ft.padding.symmetric(horizontal=10, vertical=5),
-                    text_color=ft.Colors.ON_SURFACE,
-                    icon_color=ft.Colors.ON_SURFACE,
-                )
-            )
+            return make_settings_tile(label, [
+                ft.Row([ft.Text("Show Card:", weight=ft.FontWeight.BOLD), switch_visible], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Divider(),
+                txt_height, slider_height,
+                txt_width, slider_width,
+                ft.Text("Content Alignment:"), seg_align,
+                ft.Container(height=10),
+                ft.Text(f"Card Color (Def: {default['color'].capitalize()})"), color_row
+            ], reset_func=reset_card_defaults)
 
         def get_settings_controls(category):
             controls_list = []
-            if category == "profile":
+            if category == "home_config":
+                carousel_timer_input = ft.TextField(value=str(state.carousel_timer), hint_text="Def: 10", width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_carousel_timer, on_blur=update_carousel_timer)
+                controls_list = [
+                    ft.Text("Home Page Configuration", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
+                    ft.Row([ft.Text("Carousel Timer (s):"), carousel_timer_input], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Row([ft.Text("Carousel Glass Effect:"), ft.Switch(value=state.carousel_glass, on_change=update_carousel_glass)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Container(height=10),
+                    create_card_config_tile("app", "Random App Card"),
+                    ft.Container(height=10),
+                    create_card_config_tile("quote", "Quote Card"),
+                    ft.Container(height=10),
+                    create_card_config_tile("tip", "Nix Tip Card"),
+                    ft.Container(height=10),
+                    create_card_config_tile("song", "Song Card"),
+                ]
+            elif category == "profile":
                 controls_list = [
                     ft.Text("User Profile", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
                     make_settings_tile("User Identity", [
