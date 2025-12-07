@@ -26,7 +26,17 @@ def get_search_view(perform_search, channel_dropdown, search_field, search_icon_
                     ft.Container(content=ft.Stack([ft.IconButton(ft.Icons.FILTER_LIST, on_click=lambda e: toggle_filter_menu(True)), filter_badge_container]))
                 ]),
                 result_count_text,
-                results_column
+                ft.Container(
+                    expand=True,
+                    content=ft.Column(
+                        expand=True,
+                        scroll=ft.ScrollMode.AUTO,
+                        controls=[
+                            results_column,
+                            ft.Container(height=100) # Spacer for bottom nav
+                        ]
+                    )
+                )
             ]
         )
     )
@@ -35,7 +45,14 @@ def get_cart_view(refresh_cart_view, cart_header, cart_list):
     refresh_cart_view()
     return ft.Container(
         expand=True,
-        content=ft.Column(controls=[cart_header, cart_list])
+        content=ft.Column(
+            scroll=ft.ScrollMode.AUTO,
+            controls=[
+                cart_header, 
+                cart_list,
+                ft.Container(height=100) # Spacer for bottom nav
+            ]
+        )
     )
 
 def get_lists_view(selected_list_name, is_viewing_favourites, refresh_list_detail_view, list_detail_col, go_back_to_lists_index, run_list_shell, copy_list_command, refresh_lists_main_view, lists_main_col, content_area):
@@ -55,34 +72,41 @@ def get_lists_view(selected_list_name, is_viewing_favourites, refresh_list_detai
 
         return ft.Container(
             expand=True,
-            content=ft.Column(controls=[
-                ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[
-                    ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=go_back_to_lists_index), ft.Text(title, size=24, weight=ft.FontWeight.BOLD)]),
-                    ft.Row([
-                        ft.Container(
-                            padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                            content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text(btn_text, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)]),
-                            on_click=run_list_shell,
-                            bgcolor=ft.Colors.BLUE_600,
-                            border_radius=state.get_radius('button'),
-                            ink=True,
-                            tooltip=tooltip_cmd
-                        ),
-                        ft.IconButton(ft.Icons.CONTENT_COPY, on_click=copy_list_command, tooltip=clean_cmd)
-                    ])
-                ]),
-                list_detail_col
-            ])
+            content=ft.Column(
+                scroll=ft.ScrollMode.AUTO,
+                controls=[
+                    ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[
+                        ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=go_back_to_lists_index), ft.Text(title, size=24, weight=ft.FontWeight.BOLD)]),
+                        ft.Row([
+                            ft.Container(
+                                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                                content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text(btn_text, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)]),
+                                on_click=run_list_shell,
+                                bgcolor=ft.Colors.BLUE_600,
+                                border_radius=state.get_radius('button'),
+                                ink=True,
+                                tooltip=tooltip_cmd
+                            ),
+                            ft.IconButton(ft.Icons.CONTENT_COPY, on_click=copy_list_command, tooltip=clean_cmd)
+                        ])
+                    ]),
+                    list_detail_col,
+                    ft.Container(height=100) # Spacer for bottom nav
+                ]
+            )
         )
     else:
         refresh_lists_main_view()
         return ft.Container(
             expand=True,
-            content=ft.Column(controls=[
-                ft.Text("My Lists", size=24, weight=ft.FontWeight.BOLD, color="onSurface"),
-                ft.Container(height=10),
-                lists_main_col
-            ])
+            content=ft.Column(
+                scroll=ft.ScrollMode.AUTO,
+                controls=[
+                    ft.Text("My Lists", size=24, weight=ft.FontWeight.BOLD, color="onSurface"),
+                    lists_main_col,
+                    ft.Container(height=100) # Spacer for bottom nav
+                ]
+            )
         )
 
 def create_stacked_card(content, base_color, width=None, height=None, expand=1):
@@ -1263,7 +1287,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                         label=ft.Text(channel),
                         selected=is_active,
                         on_select=lambda e, ch=channel: toggle_channel_active(ch, e.control.selected),
-                        on_delete=(lambda e, ch=channel: remove_channel_dialog(ch)) if channel not in ["nixos-unstable", "nixos-24.11"] else None,
+                        on_delete=(lambda e, ch=channel: remove_channel_dialog(ch)) if channel != "nixos-unstable" else None,
                         delete_icon=ft.Icon(ft.Icons.DELETE_OUTLINE),
                         delete_icon_color=ft.Colors.RED_400
                     )
@@ -1379,7 +1403,17 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
         ]
     )
     
-    settings_content_area = ft.Container(expand=True, padding=ft.padding.only(left=20), content=settings_main_column)
+    settings_content_area = ft.Container(
+        expand=True, 
+        padding=ft.padding.only(left=20), 
+        content=ft.Column(
+            expand=True,
+            controls=[
+                settings_main_column,
+                ft.Container(height=100) # Spacer for bottom nav
+            ]
+        )
+    )
     settings_refresh_ref[0] = update_settings_view
 
     update_settings_view()

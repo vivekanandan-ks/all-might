@@ -454,46 +454,100 @@ class NixPackageCard(GlassContainer):
                 bgcolor=chip_bg,
             )
 
+        # 1. License, Homepage, Source (Fixed order)
         footer_items = [
             create_footer_chip(ft.Icons.VERIFIED_USER_OUTLINED, license_text, (ft.Colors.GREEN, ft.Colors.GREEN))
         ]
-        if programs_str:
-            footer_items.append(create_footer_chip(ft.Icons.TERMINAL, f"Bins: {programs_str}", (ft.Colors.ORANGE, ft.Colors.ORANGE)))
         if homepage_url:
             footer_items.append(HoverLink(ft.Icons.LINK, "Homepage", homepage_url, (ft.Colors.BLUE, ft.Colors.BLUE), text_size=footer_size))
         if source_url:
             footer_items.append(HoverLink(ft.Icons.CODE, "Source", source_url, (ft.Colors.PURPLE_200, ft.Colors.PURPLE_200), text_size=footer_size))
 
-        content = ft.Column(
-            spacing=4,
-            controls=[
-                ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    controls=[
-                        ft.Column(spacing=2, controls=[
-                            ft.Row([ 
-                                ft.Text(self.pname, weight=ft.FontWeight.BOLD, size=size_lg, color="onSurface"),
-                                self.tag_chip
-                            ]),
-                        ]),
-                        ft.Row(spacing=5, controls=[
-                            self.channel_dropdown,
-                            self.unified_action_bar,
-                            self.lists_btn_container,
-                            self.fav_btn,
-                            self.cart_btn
-                        ])
-                    ]
-                ),
-                ft.Container(content=ft.Text(description, size=size_norm, color="onSurfaceVariant", no_wrap=False, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS), padding=ft.padding.only(bottom=5)),
+        # 2. Bins (Expandable section at the bottom)
+        bins_control = None
+        if self.programs_list:
+            # Check length to decide if we need a full expansion tile or just a simple display
+            # User request: "when Bins are too long make that app card expandable with an arrow"
+            # We'll use ExpansionTile for a clean "arrow" UI, usually best for lists.
+            
+            bin_chips = [
                 ft.Container(
-                    bgcolor=ft.Colors.with_opacity(0.05, state.get_base_color()),
-                    border_radius=state.get_radius('footer'),
-                    padding=4,
-                    content=ft.Row(wrap=False, scroll=ft.ScrollMode.HIDDEN, controls=footer_items, spacing=10)
-                )
+                    content=ft.Text(prog, size=size_tag, color=ft.Colors.ORANGE_100, font_family="monospace"),
+                    bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.ORANGE),
+                    padding=ft.padding.symmetric(horizontal=6, vertical=3),
+                    border_radius=4,
+                ) for prog in self.programs_list
             ]
-        )
+            
+                                bins_control = ft.ExpansionTile(
+            
+                                    title=ft.Row([
+            
+                                        ft.Icon(ft.Icons.TERMINAL, size=size_sm, color=ft.Colors.ORANGE),
+            
+                                        ft.Text(f"Binaries ({len(self.programs_list)})", size=size_sm, color="onSurfaceVariant")
+            
+                                    ], spacing=5),
+            
+                                    tile_padding=ft.padding.all(0),
+            
+                                    children_padding=ft.padding.only(bottom=10),
+            
+                                    controls=[
+            
+                                        ft.Row(controls=bin_chips, wrap=True, spacing=5, run_spacing=5)
+            
+                                    ],
+            
+                                    collapsed_shape=ft.RoundedRectangleBorder(radius=0),
+            
+                                    shape=ft.RoundedRectangleBorder(radius=0),
+            
+                                    maintain_state=True,
+            
+                                    initially_expanded=False
+            
+                                )
+
+        card_content_controls = [
+            ft.Row(
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                controls=[
+                    ft.Column(spacing=2, controls=[
+                        ft.Row([ 
+                            ft.Text(self.pname, weight=ft.FontWeight.BOLD, size=size_lg, color="onSurface"),
+                            self.tag_chip
+                        ]),
+                    ]),
+                    ft.Row(spacing=5, controls=[
+                        self.channel_dropdown,
+                        self.unified_action_bar,
+                        self.lists_btn_container,
+                        self.fav_btn,
+                        self.cart_btn
+                    ])
+                ]
+            ),
+            ft.Container(content=ft.Text(description, size=size_norm, color="onSurfaceVariant", no_wrap=False, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS), padding=ft.padding.only(bottom=5)),
+            ft.Container(
+                bgcolor=ft.Colors.with_opacity(0.05, state.get_base_color()),
+                border_radius=state.get_radius('footer'),
+                padding=4,
+                content=ft.Row(wrap=False, scroll=ft.ScrollMode.HIDDEN, controls=footer_items, spacing=10)
+            )
+        ]
+
+        if bins_control:
+            # Remove default borders from ExpansionTile to blend in
+            # We wrap it in a container to add a bit of top margin/separation
+            card_content_controls.append(
+                ft.Container(
+                    content=bins_control,
+                    margin=ft.padding.only(top=5)
+                )
+            )
+
+        content = ft.Column(spacing=4, controls=card_content_controls)
         super().__init__(content=content, padding=12, opacity=0.15, border_radius=state.get_radius('card'))
         self.update_copy_tooltip()
 

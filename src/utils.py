@@ -1,6 +1,7 @@
 import subprocess
 import json
 import urllib.request
+import base64
 import xml.etree.ElementTree as ET
 import re
 from state import state
@@ -11,32 +12,119 @@ def execute_nix_search(query, channel):
     if not query:
         return []
 
-    limit_val = str(state.search_limit)
+    try:
+        limit_val = int(state.search_limit)
+    except (ValueError, TypeError):
+        limit_val = 20
 
-    command = [
-        "nix", "run", "nixpkgs#nh", "--",
-        "search", "--channel", channel, "-j", "--limit", limit_val, query
-    ]
+    # Map "nixos-unstable" or specific versions to the backend index format
+    # nh logic: if channel starts with nixos-, use it. if it's unstable, use nixos-unstable.
+    # The URL format in nh is: https://search.nixos.org/backend/latest-44-{channel}/_search
+    # Example: latest-44-nixos-unstable or latest-44-nixos-24.05
+    
+    url = f"https://search.nixos.org/backend/latest-44-{channel}/_search"
+
+    # Construct the ElasticSearch query matching nh's implementation
+    query_dsl = {
+        "from": 0,
+        "size": limit_val,
+        "query": {
+            "bool": {
+                "filter": {
+                    "term": {
+                        "type": "package"
+                    }
+                },
+                "must": {
+                    "dis_max": {
+                        "tie_breaker": 0.7,
+                        "queries": [
+                            {
+                                "multi_match": {
+                                    "fields": [
+                                        "package_attr_name^9",
+                                        "package_attr_name.*^5.4",
+                                        "package_programs^9",
+                                        "package_programs.*^5.4",
+                                        "package_pname^6",
+                                        "package_pname.*^3.6",
+                                        "package_description^1.3",
+                                        "package_description.*^0.78",
+                                        "package_longDescription^1",
+                                        "package_longDescription.*^0.6",
+                                        "flake_name^0.5",
+                                        "flake_name.*^0.3"
+                                    ],
+                                    "query": query,
+                                    "type": "cross_fields",
+                                    "analyzer": "whitespace",
+                                    "auto_generate_synonyms_phrase_query": False,
+                                    "operator": "and"
+                                }
+                            },
+                            {
+                                "wildcard": {
+                                    "package_attr_name": {
+                                        "value": f"*{query}*",
+                                        "case_insensitive": True
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    # Auth credentials from nh source
+    user = "aWVSALXpZv"
+    password = "X8gPHnzL52wFEekuxsfQ9cSh"
+    auth_str = f"{user}:{password}"
+    b64_auth = base64.b64encode(auth_str.encode()).decode()
+
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "nh/0.0.0", # Mimic nh
+        "Authorization": f"Basic {b64_auth}"
+    }
 
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        data = json.loads(result.stdout)
-        raw_results = data.get("results", [])
+        req = urllib.request.Request(
+            url, 
+            data=json.dumps(query_dsl).encode('utf-8'), 
+            headers=headers, 
+            method="POST"
+        )
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            if response.status != 200:
+                print(f"Nix Search HTTP Error: {response.status}")
+                return [{"error": f"HTTP Error: {response.status}"}]
 
-        seen = set()
-        unique_results = []
-        for pkg in raw_results:
-            sig = (pkg.get("package_pname"), pkg.get("package_pversion"))
-            if sig not in seen:
-                seen.add(sig)
-                unique_results.append(pkg)
+            response_body = response.read()
+            data = json.loads(response_body)
+            
+            # The 'hits' array contains the documents in '_source'
+            hits = data.get("hits", {}).get("hits", [])
+            raw_results = [hit["_source"] for hit in hits]
 
-        return unique_results
-    except subprocess.CalledProcessError as e:
-        print(f"Nix Search Failed: {e.stderr}")
-        return [{"error": str(e.stderr)}]
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        print(f"Execution Error: {e}")
+            seen = set()
+            unique_results = []
+            for pkg in raw_results:
+                # Use safely .get in case fields are missing
+                pname = pkg.get("package_pname", "")
+                pversion = pkg.get("package_pversion", "")
+                sig = (pname, pversion)
+                
+                if sig not in seen:
+                    seen.add(sig)
+                    unique_results.append(pkg)
+
+            return unique_results
+
+    except Exception as e:
+        print(f"Nix Search Failed: {e}")
         return [{"error": f"Execution Error: {str(e)}"}]
 
 def get_mastodon_quote(account, tag):
