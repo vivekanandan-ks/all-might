@@ -6,6 +6,7 @@ from collections import Counter
 import shlex
 import subprocess
 import time
+from utils import get_mastodon_quote
 
 def get_search_view(perform_search, channel_dropdown, search_field, search_icon_btn, results_column, result_count_text, filter_badge_container, toggle_filter_menu):
     channel_dropdown.border_radius = state.get_radius('selector')
@@ -147,20 +148,72 @@ def get_home_view():
     def get_card_color(color_name):
         return COLOR_NAME_MAP.get(color_name, ft.Colors.BLUE)
 
+    def create_dynamic_card_click_handler(link):
+        def handler(e):
+            if not link: return
+            def copy_link(e):
+                e.page.set_clipboard(link)
+                show_toast("Link copied to clipboard")
+            def open_link(e):
+                e.page.launch_url(link)
+                e.page.close(dlg)
+            dlg = ft.AlertDialog(
+                title=ft.Text("Open Link?"),
+                content=ft.Column([
+                    ft.Text("Do you want to open this Mastodon post in your browser?"),
+                    ft.Container(height=10),
+                    ft.Text(link, size=12, color="blue", selectable=True, italic=True)
+                ], tight=True),
+                actions=[
+                    ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=copy_link),
+                    ft.TextButton("No", on_click=lambda e: e.page.close(dlg)),
+                    ft.TextButton("Yes", on_click=open_link),
+                ],
+                actions_alignment=ft.MainAxisAlignment.END
+            )
+            e.page.open(dlg)
+        return handler
+
     # Build App Card
     cfg = get_cfg("app")
     if cfg["visible"]:
         base_col = get_card_color(cfg["color"])
+        
+        app_title = app_data["pname"]
+        app_desc = app_data["desc"]
+        app_tooltip = "Random App"
+        app_click = None
+
+        if state.app_use_mastodon:
+            if not state.app_mastodon_cache:
+                fetched = get_mastodon_quote(state.app_mastodon_account, state.app_mastodon_tag)
+                if fetched:
+                    state.app_mastodon_cache = fetched
+                    state.last_fetched_app = fetched
+                    state.save_settings()
+                elif state.last_fetched_app:
+                    state.app_mastodon_cache = state.last_fetched_app
+            
+            if state.app_mastodon_cache:
+                app_title = "Community Pick"
+                app_desc = state.app_mastodon_cache.get("text", "...")
+                link = state.app_mastodon_cache.get("link", "")
+                if link:
+                    app_tooltip = f"Open on Mastodon: {link}"
+                    app_click = create_dynamic_card_click_handler(link)
+
         main_card = GlassContainer(
             padding=20, border_radius=20,
             bgcolor=ft.Colors.with_opacity(0.9, base_col),
+            tooltip=app_tooltip,
+            on_click=app_click,
             content=ft.Column(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 horizontal_alignment=ft.CrossAxisAlignment.START,
                 controls=[
                     ft.Row([ft.Text("Random App of the Day", size=12, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
-                    ft.Row([ft.Text(app_data["pname"], size=32, color=ft.Colors.WHITE, weight=ft.FontWeight.W_900)], alignment=get_alignment(cfg["align"])),
-                    ft.Row([ft.Text(app_data["desc"], size=12, color=ft.Colors.WHITE70, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS, text_align=ft.TextAlign.LEFT if cfg["align"] == "left" else (ft.TextAlign.RIGHT if cfg["align"] == "right" else ft.TextAlign.CENTER))], alignment=get_alignment(cfg["align"])),
+                    ft.Row([ft.Text(app_title, size=32, color=ft.Colors.WHITE, weight=ft.FontWeight.W_900)], alignment=get_alignment(cfg["align"])),
+                    ft.Row([ft.Text(app_desc, size=12, color=ft.Colors.WHITE70, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS, text_align=ft.TextAlign.LEFT if cfg["align"] == "left" else (ft.TextAlign.RIGHT if cfg["align"] == "right" else ft.TextAlign.CENTER))], alignment=get_alignment(cfg["align"])),
                 ]
             )
         )
@@ -170,17 +223,43 @@ def get_home_view():
     cfg = get_cfg("tip")
     if cfg["visible"]:
         base_col = get_card_color(cfg["color"])
+        
+        tip_title = tip_data["title"]
+        tip_code = tip_data["code"]
+        tip_tooltip = "Nix Tip"
+        tip_click = None
+
+        if state.tip_use_mastodon:
+            if not state.tip_mastodon_cache:
+                fetched = get_mastodon_quote(state.tip_mastodon_account, state.tip_mastodon_tag)
+                if fetched:
+                    state.tip_mastodon_cache = fetched
+                    state.last_fetched_tip = fetched
+                    state.save_settings()
+                elif state.last_fetched_tip:
+                    state.tip_mastodon_cache = state.last_fetched_tip
+            
+            if state.tip_mastodon_cache:
+                tip_title = "Community Tip"
+                tip_code = state.tip_mastodon_cache.get("text", "...")
+                link = state.tip_mastodon_cache.get("link", "")
+                if link:
+                    tip_tooltip = f"Open on Mastodon: {link}"
+                    tip_click = create_dynamic_card_click_handler(link)
+
         main_card = GlassContainer(
             padding=15, border_radius=20,
             bgcolor=ft.Colors.with_opacity(0.9, base_col),
+            tooltip=tip_tooltip,
+            on_click=tip_click,
             content=ft.Column(
                 controls=[
                     ft.Row([ft.Text("Nix Random Tip", size=12, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
                     ft.Container(height=10),
-                    ft.Row([ft.Text(tip_data["title"], size=16, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
+                    ft.Row([ft.Text(tip_title, size=16, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
                     ft.Container(
                         bgcolor=ft.Colors.BLACK26, padding=10, border_radius=8,
-                        content=ft.Text(tip_data["code"], font_family="monospace", size=12, color=ft.Colors.GREEN_100),
+                        content=ft.Text(tip_code, font_family="monospace", size=12, color=ft.Colors.GREEN_100),
                         alignment=ft.alignment.center_left if cfg["align"] == "left" else (ft.alignment.center_right if cfg["align"] == "right" else ft.alignment.center)
                     )
                 ]
@@ -192,15 +271,46 @@ def get_home_view():
     cfg = get_cfg("quote")
     if cfg["visible"]:
         base_col = get_card_color(cfg["color"])
+        
+        q_text = quote_data["text"]
+        q_link = ""
+        q_tooltip = "Quote of the Day"
+        q_click = None
+
+        if state.use_mastodon_quote:
+            if not state.mastodon_quote_cache:
+                fetched = get_mastodon_quote(state.quote_mastodon_account, state.quote_mastodon_tag)
+                if fetched:
+                    state.mastodon_quote_cache = fetched
+                    state.last_fetched_quote = fetched
+                    state.save_settings()
+                elif state.last_fetched_quote:
+                    state.mastodon_quote_cache = state.last_fetched_quote
+            
+            if state.mastodon_quote_cache:
+                q_text = state.mastodon_quote_cache.get("text", "...")
+                q_link = state.mastodon_quote_cache.get("link", "")
+                if q_link:
+                    q_tooltip = f"Open on Mastodon: {q_link}"
+                    q_click = create_dynamic_card_click_handler(q_link)
+
         main_card = GlassContainer(
             padding=15, border_radius=20,
             bgcolor=ft.Colors.with_opacity(0.9, base_col),
+            tooltip=q_tooltip,
+            on_click=q_click,
             content=ft.Column(
                 alignment=ft.MainAxisAlignment.CENTER,
                 controls=[
                     ft.Row([ft.Text("Quote of the Day", size=10, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
-                    ft.Text(f'"{quote_data["text"]}"', size=13, color=ft.Colors.WHITE, italic=True, text_align=ft.TextAlign.LEFT if cfg["align"] == "left" else (ft.TextAlign.RIGHT if cfg["align"] == "right" else ft.TextAlign.CENTER)),
-                    ft.Row([ft.Text(f"- {quote_data['author']}", size=11, color=ft.Colors.WHITE70)], alignment=ft.MainAxisAlignment.END if cfg["align"] == "right" else (ft.MainAxisAlignment.START if cfg["align"] == "left" else ft.MainAxisAlignment.CENTER))
+                    ft.Text(
+                        q_text, 
+                        size=13, 
+                        color=ft.Colors.WHITE, 
+                        italic=state.quote_style_italic, 
+                        weight=ft.FontWeight.BOLD if state.quote_style_bold else ft.FontWeight.NORMAL,
+                        text_align=ft.TextAlign.LEFT if cfg["align"] == "left" else (ft.TextAlign.RIGHT if cfg["align"] == "right" else ft.TextAlign.CENTER)
+                    ),
                 ]
             )
         )
@@ -210,16 +320,42 @@ def get_home_view():
     cfg = get_cfg("song")
     if cfg["visible"]:
         base_col = get_card_color(cfg["color"])
+        
+        song_title = song_data["title"]
+        song_artist = song_data["artist"]
+        song_tooltip = "Song of the Day"
+        song_click = None
+
+        if state.song_use_mastodon:
+            if not state.song_mastodon_cache:
+                fetched = get_mastodon_quote(state.song_mastodon_account, state.song_mastodon_tag)
+                if fetched:
+                    state.song_mastodon_cache = fetched
+                    state.last_fetched_song = fetched
+                    state.save_settings()
+                elif state.last_fetched_song:
+                    state.song_mastodon_cache = state.last_fetched_song
+            
+            if state.song_mastodon_cache:
+                song_title = state.song_mastodon_cache.get("text", "...").split("\n")[0] # Use first line as title
+                song_artist = state.song_mastodon_cache.get("author", "")
+                link = state.song_mastodon_cache.get("link", "")
+                if link:
+                    song_tooltip = f"Open on Mastodon: {link}"
+                    song_click = create_dynamic_card_click_handler(link)
+
         main_card = GlassContainer(
             padding=15, border_radius=20,
             bgcolor=ft.Colors.with_opacity(0.9, base_col),
+            tooltip=song_tooltip,
+            on_click=song_click,
             content=ft.Column(
                 alignment=ft.MainAxisAlignment.CENTER,
                 controls=[
                     ft.Row([ft.Text("Song of the Day", size=10, color=ft.Colors.BLACK54, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
                     ft.Row([ft.Icon(ft.Icons.MUSIC_NOTE, size=30, color=ft.Colors.BLACK87)], alignment=get_alignment(cfg["align"])),
-                    ft.Row([ft.Text(song_data["title"], size=16, color=ft.Colors.BLACK87, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
-                    ft.Row([ft.Text(song_data["artist"], size=12, color=ft.Colors.BLACK54)], alignment=get_alignment(cfg["align"]))
+                    ft.Row([ft.Text(song_title, size=16, color=ft.Colors.BLACK87, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
+                    ft.Row([ft.Text(song_artist, size=12, color=ft.Colors.BLACK54)], alignment=get_alignment(cfg["align"]))
                 ]
             )
         )
@@ -260,10 +396,12 @@ def get_home_view():
             controls.append(ft.Container(height=40))
             controls.append(ft.Row(controls=cards_row2, spacing=20, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START))
 
+    controls.append(ft.Container(height=100))
+
     return ft.Container(
         expand=True,
         alignment=ft.alignment.top_left,
-        padding=ft.padding.only(top=40, left=30, right=30, bottom=20),
+        padding=ft.padding.only(top=40, left=30, right=30, bottom=0),
         content=ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.START,
             controls=controls,
@@ -761,39 +899,6 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 ctrl.border = ft.border.all(2, "white") if is_sel else ft.border.all(2, ft.Colors.TRANSPARENT)
             color_row.update()
 
-        def reset_card_defaults(e):
-            def capture():
-                return state.home_card_config[card_key].copy()
-
-            def apply():
-                state.home_card_config[card_key] = default.copy()
-
-                switch_visible.value = default["visible"]
-                slider_height.value = default["h"]
-                txt_height.value = get_label_text("Height (px)", default["h"], default["h"])
-
-                slider_width.value = default["w"]
-                txt_width.value = get_label_text("Width (px) [0 = Auto]", default["w"], default["w"])
-
-                seg_align.selected = {default["align"]}
-
-                for ctrl in color_row.controls:
-                    ctrl.border = ft.border.all(2, "white") if ctrl.data == default["color"] else ft.border.all(2, ft.Colors.TRANSPARENT)
-
-                if settings_main_column.page:
-                    switch_visible.update()
-                    slider_height.update()
-                    txt_height.update()
-                    slider_width.update()
-                    txt_width.update()
-                    seg_align.update()
-                    color_row.update()
-
-            def restore(s):
-                state.home_card_config[card_key] = s
-
-            reset_with_confirmation(f"Reset {label}?", apply, capture, restore)
-
         switch_visible = ft.Switch(value=cfg["visible"], on_change=update_visible)
         slider_height = ft.Slider(min=100, max=400, value=cfg["h"], label="{value}", on_change=update_height)
         slider_width = ft.Slider(min=0, max=600, value=cfg["w"], label="{value}", on_change=update_width)
@@ -819,7 +924,68 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
             )
         color_row = ft.Row(controls=color_controls, spacing=10, wrap=True)
 
-        return make_settings_tile(label, [
+        def reset_card_defaults(e):
+            def capture():
+                return state.home_card_config[card_key].copy()
+
+            def apply():
+                state.home_card_config[card_key] = default.copy()
+
+                switch_visible.value = default["visible"]
+                slider_height.value = default["h"]
+                txt_height.value = get_label_text("Height (px)", default["h"], default["h"])
+
+                slider_width.value = default["w"]
+                txt_width.value = get_label_text("Width (px) [0 = Auto]", default["w"], default["w"])
+
+                seg_align.selected = {default["align"]}
+
+                for ctrl in color_row.controls:
+                    ctrl.border = ft.border.all(2, "white") if ctrl.data == default["color"] else ft.border.all(2, ft.Colors.TRANSPARENT)
+
+                if card_key == "quote":
+                    state.use_mastodon_quote = True
+                    state.quote_mastodon_account = "vivekanandanks"
+                    state.quote_mastodon_tag = "mha"
+                    state.quote_style_italic = True
+                    state.quote_style_bold = True
+                    state.mastodon_quote_cache = None
+                
+                if card_key == "app":
+                    state.app_use_mastodon = False
+                    state.app_mastodon_account = ""
+                    state.app_mastodon_tag = ""
+                    state.app_mastodon_cache = None
+
+                if card_key == "tip":
+                    state.tip_use_mastodon = False
+                    state.tip_mastodon_account = ""
+                    state.tip_mastodon_tag = ""
+                    state.tip_mastodon_cache = None
+
+                if card_key == "song":
+                    state.song_use_mastodon = False
+                    state.song_mastodon_account = ""
+                    state.song_mastodon_tag = ""
+                    state.song_mastodon_cache = None
+
+                if settings_main_column.page:
+                    switch_visible.update()
+                    slider_height.update()
+                    txt_height.update()
+                    slider_width.update()
+                    txt_width.update()
+                    seg_align.update()
+                    color_row.update()
+                    if card_key in ["quote", "app", "tip", "song"]:
+                        update_settings_view()
+
+            def restore(s):
+                state.home_card_config[card_key] = s
+
+            reset_with_confirmation(f"Reset {label}?", apply, capture, restore)
+
+        tile_content = [
             ft.Row([ft.Text("Show Card:", weight=ft.FontWeight.BOLD), switch_visible], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ft.Divider(),
             txt_height, slider_height,
@@ -827,7 +993,117 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
             ft.Text("Content Alignment:"), seg_align,
             ft.Container(height=10),
             ft.Text(f"Card Color (Def: {default['color'].capitalize()})"), color_row
-        ], reset_func=reset_card_defaults)
+        ]
+
+        if card_key == "quote":
+            def update_use_mastodon(e):
+                state.use_mastodon_quote = e.control.value
+                state.save_settings()
+                state.mastodon_quote_cache = None # Clear cache to force refresh
+
+            def update_mastodon_account(e):
+                state.quote_mastodon_account = e.control.value
+                state.save_settings()
+                state.mastodon_quote_cache = None
+
+            def update_mastodon_tag(e):
+                state.quote_mastodon_tag = e.control.value
+                state.save_settings()
+                state.mastodon_quote_cache = None
+
+            def update_quote_italic(e):
+                state.quote_style_italic = e.control.value
+                state.save_settings()
+
+            def update_quote_bold(e):
+                state.quote_style_bold = e.control.value
+                state.save_settings()
+
+            tile_content.extend([
+                ft.Divider(),
+                ft.Text("Dynamic Source (Mastodon)", weight=ft.FontWeight.BOLD),
+                ft.Row([ft.Text("Enable RSS Fetch:"), ft.Switch(value=state.use_mastodon_quote, on_change=update_use_mastodon)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.TextField(label="Account (e.g. vivekanandanks)", value=state.quote_mastodon_account, on_blur=update_mastodon_account, text_size=12),
+                ft.TextField(label="Tag (e.g. mha)", value=state.quote_mastodon_tag, on_blur=update_mastodon_tag, text_size=12),
+                ft.Container(height=10),
+                ft.Text("Quote Style", weight=ft.FontWeight.BOLD),
+                ft.Row([ft.Text("Italic Text:"), ft.Switch(value=state.quote_style_italic, on_change=update_quote_italic)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Row([ft.Text("Bold Text:"), ft.Switch(value=state.quote_style_bold, on_change=update_quote_bold)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ])
+
+        elif card_key == "app":
+            def update_app_mastodon(e):
+                state.app_use_mastodon = e.control.value
+                state.save_settings()
+                state.app_mastodon_cache = None
+
+            def update_app_account(e):
+                state.app_mastodon_account = e.control.value
+                state.save_settings()
+                state.app_mastodon_cache = None
+
+            def update_app_tag(e):
+                state.app_mastodon_tag = e.control.value
+                state.save_settings()
+                state.app_mastodon_cache = None
+
+            tile_content.extend([
+                ft.Divider(),
+                ft.Text("Dynamic Source (Mastodon)", weight=ft.FontWeight.BOLD),
+                ft.Row([ft.Text("Enable RSS Fetch:"), ft.Switch(value=state.app_use_mastodon, on_change=update_app_mastodon)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.TextField(label="Account", value=state.app_mastodon_account, on_blur=update_app_account, text_size=12),
+                ft.TextField(label="Tag", value=state.app_mastodon_tag, on_blur=update_app_tag, text_size=12),
+            ])
+
+        elif card_key == "tip":
+            def update_tip_mastodon(e):
+                state.tip_use_mastodon = e.control.value
+                state.save_settings()
+                state.tip_mastodon_cache = None
+
+            def update_tip_account(e):
+                state.tip_mastodon_account = e.control.value
+                state.save_settings()
+                state.tip_mastodon_cache = None
+
+            def update_tip_tag(e):
+                state.tip_mastodon_tag = e.control.value
+                state.save_settings()
+                state.tip_mastodon_cache = None
+
+            tile_content.extend([
+                ft.Divider(),
+                ft.Text("Dynamic Source (Mastodon)", weight=ft.FontWeight.BOLD),
+                ft.Row([ft.Text("Enable RSS Fetch:"), ft.Switch(value=state.tip_use_mastodon, on_change=update_tip_mastodon)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.TextField(label="Account", value=state.tip_mastodon_account, on_blur=update_tip_account, text_size=12),
+                ft.TextField(label="Tag", value=state.tip_mastodon_tag, on_blur=update_tip_tag, text_size=12),
+            ])
+
+        elif card_key == "song":
+            def update_song_mastodon(e):
+                state.song_use_mastodon = e.control.value
+                state.save_settings()
+                state.song_mastodon_cache = None
+
+            def update_song_account(e):
+                state.song_mastodon_account = e.control.value
+                state.save_settings()
+                state.song_mastodon_cache = None
+
+            def update_song_tag(e):
+                state.song_mastodon_tag = e.control.value
+                state.save_settings()
+                state.song_mastodon_cache = None
+
+            tile_content.extend([
+                ft.Divider(),
+                ft.Text("Dynamic Source (Mastodon)", weight=ft.FontWeight.BOLD),
+                ft.Row([ft.Text("Enable RSS Fetch:"), ft.Switch(value=state.song_use_mastodon, on_change=update_song_mastodon)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.TextField(label="Account", value=state.song_mastodon_account, on_blur=update_song_account, text_size=12),
+                ft.TextField(label="Tag", value=state.song_mastodon_tag, on_blur=update_song_tag, text_size=12),
+            ])
+
+        return make_settings_tile(label, tile_content, reset_func=reset_card_defaults)
 
     def get_settings_controls(category):
         controls_list = []

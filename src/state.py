@@ -73,6 +73,36 @@ class AppState:
         self.carousel_timer = 10
         self.carousel_glass = True # Default to glassmorphism
 
+        # Quote Settings
+        self.use_mastodon_quote = True
+        self.quote_mastodon_account = "vivekanandanks"
+        self.quote_mastodon_tag = "mha"
+        self.quote_style_italic = True
+        self.quote_style_bold = True
+        self.mastodon_quote_cache = None
+        self.last_fetched_quote = None
+
+        # App Settings
+        self.app_use_mastodon = False
+        self.app_mastodon_account = ""
+        self.app_mastodon_tag = ""
+        self.app_mastodon_cache = None
+        self.last_fetched_app = None
+
+        # Tip Settings
+        self.tip_use_mastodon = False
+        self.tip_mastodon_account = ""
+        self.tip_mastodon_tag = ""
+        self.tip_mastodon_cache = None
+        self.last_fetched_tip = None
+
+        # Song Settings
+        self.song_use_mastodon = False
+        self.song_mastodon_account = ""
+        self.song_mastodon_tag = ""
+        self.song_mastodon_cache = None
+        self.last_fetched_song = None
+
         self.daily_indices = {"app": 0, "quote": 0, "tip": 0, "song": 0}
         self.last_daily_date = ""
 
@@ -190,6 +220,28 @@ class AppState:
                         if "home_show_tip" in data: self.home_card_config["tip"]["visible"] = data["home_show_tip"]
                         if "home_show_song" in data: self.home_card_config["song"]["visible"] = data["home_show_song"]
 
+                    self.use_mastodon_quote = data.get("use_mastodon_quote", True)
+                    self.quote_mastodon_account = data.get("quote_mastodon_account", "vivekanandanks")
+                    self.quote_mastodon_tag = data.get("quote_mastodon_tag", "mha")
+                    self.quote_style_italic = data.get("quote_style_italic", True)
+                    self.quote_style_bold = data.get("quote_style_bold", True)
+                    self.last_fetched_quote = data.get("last_fetched_quote", None)
+
+                    self.app_use_mastodon = data.get("app_use_mastodon", False)
+                    self.app_mastodon_account = data.get("app_mastodon_account", "")
+                    self.app_mastodon_tag = data.get("app_mastodon_tag", "")
+                    self.last_fetched_app = data.get("last_fetched_app", None)
+
+                    self.tip_use_mastodon = data.get("tip_use_mastodon", False)
+                    self.tip_mastodon_account = data.get("tip_mastodon_account", "")
+                    self.tip_mastodon_tag = data.get("tip_mastodon_tag", "")
+                    self.last_fetched_tip = data.get("last_fetched_tip", None)
+
+                    self.song_use_mastodon = data.get("song_use_mastodon", False)
+                    self.song_mastodon_account = data.get("song_mastodon_account", "")
+                    self.song_mastodon_tag = data.get("song_mastodon_tag", "")
+                    self.last_fetched_song = data.get("last_fetched_song", None)
+
                     self.daily_indices = data.get("daily_indices", self.daily_indices)
                     self.last_daily_date = data.get("last_daily_date", "")
                     self.carousel_timer = data.get("carousel_timer", 10)
@@ -259,6 +311,28 @@ class AppState:
                 "sync_nav_font": self.sync_nav_font,
 
                 "home_card_config": self.home_card_config,
+                "use_mastodon_quote": self.use_mastodon_quote,
+                "quote_mastodon_account": self.quote_mastodon_account,
+                "quote_mastodon_tag": self.quote_mastodon_tag,
+                "quote_style_italic": self.quote_style_italic,
+                "quote_style_bold": self.quote_style_bold,
+                "last_fetched_quote": self.last_fetched_quote,
+
+                "app_use_mastodon": self.app_use_mastodon,
+                "app_mastodon_account": self.app_mastodon_account,
+                "app_mastodon_tag": self.app_mastodon_tag,
+                "last_fetched_app": self.last_fetched_app,
+
+                "tip_use_mastodon": self.tip_use_mastodon,
+                "tip_mastodon_account": self.tip_mastodon_account,
+                "tip_mastodon_tag": self.tip_mastodon_tag,
+                "last_fetched_tip": self.last_fetched_tip,
+
+                "song_use_mastodon": self.song_use_mastodon,
+                "song_mastodon_account": self.song_mastodon_account,
+                "song_mastodon_tag": self.song_mastodon_tag,
+                "last_fetched_song": self.last_fetched_song,
+
                 "daily_indices": self.daily_indices,
                 "last_daily_date": self.last_daily_date,
                 "carousel_timer": self.carousel_timer,
