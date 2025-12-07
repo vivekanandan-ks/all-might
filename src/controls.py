@@ -3,6 +3,7 @@ import os
 import shlex
 import threading
 import time
+import subprocess
 from state import state
 from utils import execute_nix_search
 
@@ -605,9 +606,10 @@ class NixPackageCard(GlassContainer):
         target = f"nixpkgs/{self.selected_channel}#{self.pname}"
         core_cmd = ""
         if self.run_mode == "direct":
-            core_cmd = f"nix run {target}"
+            core_cmd = f"nix shell {target} --command {self.pname}"
         elif self.run_mode == "shell":
-            core_cmd = f"nix shell {target}"
+            # Use --noprofile --norc to avoid issues with user config in the restricted env
+            core_cmd = f"nix shell {target} --command bash --noprofile --norc"
 
         if with_wrapper:
             prefix = state.shell_single_prefix.strip()
@@ -632,19 +634,45 @@ class NixPackageCard(GlassContainer):
         state.add_to_history(self.pkg, self.selected_channel)
         display_cmd = self._generate_nix_command(with_wrapper=True)
         cmd_list = shlex.split(display_cmd)
-
+        
         output_text = ft.Text("Launching process...", font_family="monospace", size=12)
+        
+        content_controls = [
+            ft.Text(f"Command: {display_cmd}", color=ft.Colors.BLUE_200, size=12, selectable=True)
+        ]
+        
+        if self.run_mode == "direct":
+             content_controls.append(ft.Container(height=10))
+             content_controls.append(ft.Text("Note: CLI apps might not work well when running directly. Use 'Try in a shell' for best results.", size=12, color=ft.Colors.ORANGE_400, italic=True))
+
+        content_controls.append(ft.Divider())
+        content_controls.append(ft.Column([output_text], scroll=ft.ScrollMode.AUTO, expand=True))
+
         dlg = ft.AlertDialog(
             title=ft.Text(f"Launching: {self.run_mode.capitalize()}"),
-            content=ft.Container(width=500, height=150, content=ft.Column([ft.Text(f"Command: {display_cmd}", color=ft.Colors.BLUE_200, size=12, selectable=True), ft.Divider(), ft.Column([output_text], scroll=ft.ScrollMode.AUTO, expand=True)])),
+            content=ft.Container(width=500, height=150, content=ft.Column(content_controls)),
             actions=[ft.TextButton("Close", on_click=lambda e: self.page_ref.close(dlg))]
         )
         self.page_ref.open(dlg)
         self.page_ref.update()
 
         try:
-            subprocess.Popen(cmd_list, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-            output_text.value = "Process started.\nYou can close this dialog."
+            # Use pipes to capture output
+            proc = subprocess.Popen(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            
+            # Wait briefly to check for immediate failure
+            try:
+                outs, errs = proc.communicate(timeout=0.5)
+                # If we get here, process exited
+                if proc.returncode != 0:
+                    err_msg = errs.decode('utf-8', errors='replace') if errs else "Unknown error"
+                    output_text.value = f"Process failed (Exit Code {proc.returncode}):\n{err_msg}"
+                else:
+                    output_text.value = "Process finished immediately."
+            except subprocess.TimeoutExpired:
+                # Process is still running (good!)
+                output_text.value = "Process started successfully."
+            
             self.page_ref.update()
         except Exception as ex:
             output_text.value = f"Error executing command:\n{str(ex)}"
