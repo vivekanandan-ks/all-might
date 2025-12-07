@@ -1419,7 +1419,7 @@ def _build_shell_command_for_items(items, with_wrapper=True):
         nix_pkgs_args.append(f"nixpkgs/{channel}#{pkg.get('package_pname')}")
 
     nix_args_str = " ".join(nix_pkgs_args)
-    nix_cmd = f"nix shell {nix_args_str}"
+    nix_cmd = f"nix shell {nix_args_str} --command bash --noprofile --norc"
 
     if with_wrapper:
         return f"{prefix} {nix_cmd} {suffix}".strip()
@@ -1428,14 +1428,29 @@ def _build_shell_command_for_items(items, with_wrapper=True):
 
 def _launch_shell_dialog(display_cmd, title, page):
     cmd_list = shlex.split(display_cmd)
+    
     output_text = ft.Text("Launching process...", font_family="monospace", size=12)
     dlg = ft.AlertDialog(title=ft.Text(f"Launching {title}"), content=ft.Container(width=500, height=150, content=ft.Column([ft.Text(f"Command: {display_cmd}", color=ft.Colors.BLUE_200, size=12, selectable=True), ft.Divider(), ft.Column([output_text], scroll=ft.ScrollMode.AUTO, expand=True)])), actions=[ft.TextButton("Close", on_click=lambda e: page.close(dlg))])
     page.open(dlg)
     page.update()
 
     try:
-        subprocess.Popen(cmd_list, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        output_text.value = "Process started.\nYou can close this dialog."
+        # Use pipes to capture output
+        proc = subprocess.Popen(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        
+        # Wait briefly to check for immediate failure
+        try:
+            outs, errs = proc.communicate(timeout=0.5)
+            # If we get here, process exited
+            if proc.returncode != 0:
+                err_msg = errs.decode('utf-8', errors='replace') if errs else "Unknown error"
+                output_text.value = f"Process failed (Exit Code {proc.returncode}):\n{err_msg}"
+            else:
+                output_text.value = "Process finished immediately."
+        except subprocess.TimeoutExpired:
+            # Process is still running (good!)
+            output_text.value = "Process started successfully."
+        
         page.update()
     except Exception as ex:
         output_text.value = f"Error executing command:\n{str(ex)}"
