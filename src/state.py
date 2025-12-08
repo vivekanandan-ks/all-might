@@ -3,6 +3,8 @@ import json
 import os
 import random
 import datetime
+import subprocess
+import re
 from pathlib import Path
 from constants import *
 
@@ -103,6 +105,11 @@ class AppState:
         self.song_mastodon_cache = None
         self.last_fetched_song = None
 
+        self.installed_enrich_metadata = True
+        self.auto_refresh_ui = False
+        self.auto_refresh_interval = 10
+        self.installed_items = {} # pname -> list of {'key': key, 'attrPath': attrPath}
+
         self.daily_indices = {"app": 0, "quote": 0, "tip": 0, "song": 0}
         self.last_daily_date = ""
 
@@ -116,15 +123,17 @@ class AppState:
         self.shell_cart_suffix = ""
 
         self.available_channels = [
-            "nixos-25.11", "nixos-25.05", "nixos-unstable", "nixos-24.11", "nixos-24.05"
+            "nixos-unstable", "nixos-24.11", "nixos-24.05"
         ]
         self.active_channels = [
-            "nixos-25.11", "nixos-25.05", "nixos-unstable", "nixos-24.11"
+            "nixos-unstable", "nixos-24.11"
         ]
         self.cart_items = []
         self.favourites = []
         self.saved_lists = {}
+        self.tracked_installs = {}
         self.load_settings()
+        self.load_tracking()
         self.update_daily_indices()
 
     def update_daily_indices(self):
@@ -242,6 +251,10 @@ class AppState:
                     self.song_mastodon_tag = data.get("song_mastodon_tag", "")
                     self.last_fetched_song = data.get("last_fetched_song", None)
 
+                    self.installed_enrich_metadata = data.get("installed_enrich_metadata", True)
+                    self.auto_refresh_ui = data.get("auto_refresh_ui", False)
+                    self.auto_refresh_interval = data.get("auto_refresh_interval", 10)
+
                     self.daily_indices = data.get("daily_indices", self.daily_indices)
                     self.last_daily_date = data.get("last_daily_date", "")
                     self.carousel_timer = data.get("carousel_timer", 10)
@@ -332,6 +345,10 @@ class AppState:
                 "song_mastodon_account": self.song_mastodon_account,
                 "song_mastodon_tag": self.song_mastodon_tag,
                 "last_fetched_song": self.last_fetched_song,
+
+                "installed_enrich_metadata": self.installed_enrich_metadata,
+                "auto_refresh_ui": self.auto_refresh_ui,
+                "auto_refresh_interval": self.auto_refresh_interval,
 
                 "daily_indices": self.daily_indices,
                 "last_daily_date": self.last_daily_date,
@@ -546,4 +563,126 @@ class AppState:
     def get_base_color(self):
         return ft.Colors.WHITE if self.theme_mode == "dark" else ft.Colors.BLACK
 
+    # --- Tracking Logic ---
+    def load_tracking(self):
+        if os.path.exists(TRACKING_FILE):
+            try:
+                with open(TRACKING_FILE, 'r') as f:
+                    self.tracked_installs = json.load(f)
+            except Exception as e:
+                print(f"Error loading tracking: {e}")
+                self.tracked_installs = {}
+
+    def save_tracking(self):
+        try:
+            Path(CONFIG_DIR).mkdir(parents=True, exist_ok=True)
+            with open(TRACKING_FILE, 'w') as f:
+                json.dump(self.tracked_installs, f, indent=4)
+        except Exception as e:
+            print(f"Error saving tracking: {e}")
+
+    def _get_track_key(self, pname, channel):
+        return f"{pname}::{channel}"
+
+    def track_install(self, pname, channel):
+        key = self._get_track_key(pname, channel)
+        self.tracked_installs[key] = {
+            "pname": pname,
+            "channel": channel,
+            "installed_at": datetime.datetime.now().isoformat()
+        }
+        self.save_tracking()
+
+    def untrack_install(self, pname, channel):
+        key = self._get_track_key(pname, channel)
+        if key in self.tracked_installs:
+            del self.tracked_installs[key]
+            self.save_tracking()
+
+    def is_tracked(self, pname, channel):
+        # We might need fuzzy matching if channel versions differ slightly, 
+        # but for now strict match on what we installed.
+        key = self._get_track_key(pname, channel)
+        return key in self.tracked_installs
+
+    def get_tracked_channel(self, pname):
+        # Check if pname is tracked under any channel
+        # Keys are "pname::channel"
+        search_prefix = f"{pname}::"
+        for key in self.tracked_installs:
+            if key == pname or key.startswith(search_prefix):
+                # Found it
+                parts = key.split("::")
+                if len(parts) >= 2:
+                    return parts[1]
+                return "unknown"
+        return None
+
+    # --- Cache Logic ---
+    def refresh_installed_cache(self):
+        try:
+            result = subprocess.run(
+                ["nix", "profile", "list", "--json"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            if result.returncode != 0:
+                return
+            
+            data = json.loads(result.stdout)
+            elements = data.get("elements", {})
+            new_items = {}
+            
+            for key, info in elements.items():
+                store_paths = info.get("storePaths", [])
+                attr_path = info.get("attrPath", "")
+                if not store_paths:
+                    continue
+                
+                basename = os.path.basename(store_paths[0])
+                # Remove hash (32 chars) + dash
+                if len(basename) > 33 and basename[32] == '-':
+                    rest = basename[33:]
+                else:
+                    rest = basename
+
+                # Split name and version
+                match = re.search(r'-(\d)', rest)
+                if match:
+                    name = rest[:match.start()]
+                else:
+                    name = rest
+                
+                if name not in new_items:
+                    new_items[name] = []
+                new_items[name].append({'key': key, 'attrPath': attr_path})
+            
+            self.installed_items = new_items
+        except Exception as e:
+            print(f"Error refreshing cache: {e}")
+
+    def is_package_installed(self, pname, search_attr_name=None):
+        if pname not in self.installed_items:
+            return False
+        
+        if not search_attr_name:
+            return True
+            
+        installed_list = self.installed_items[pname]
+        for item in installed_list:
+            attr = item['attrPath']
+            if not attr: continue
+            # Check suffix
+            if attr.endswith(f".{search_attr_name}") or attr == search_attr_name:
+                return True
+        return False
+
+    def get_element_key(self, pname):
+        # Return the first element key found for this pname
+        if pname in self.installed_items and self.installed_items[pname]:
+            return self.installed_items[pname][0]['key']
+        return None
+
 state = AppState()
+state.refresh_installed_cache()

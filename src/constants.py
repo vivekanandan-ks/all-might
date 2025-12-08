@@ -5,6 +5,7 @@ import os
 APP_NAME = "All Might"
 CONFIG_DIR = os.path.expanduser("~/.config/all-might")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "settings.json")
+TRACKING_FILE = os.path.join(CONFIG_DIR, "installed.json")
 
 # --- Mock Data for Daily Digest ---
 DAILY_APPS = [
