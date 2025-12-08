@@ -49,10 +49,11 @@ DAILY_SONGS = [
 ]
 
 CAROUSEL_DATA = [
-    {"title": "New Feature!", "desc": "Check out the new settings page.", "color": ft.Colors.BLUE},
-    {"title": "Nix Tip", "desc": "Use 'nix flake update' often.", "color": ft.Colors.GREEN},
-    {"title": "Community", "desc": "Join the Matrix chat!", "color": ft.Colors.PURPLE},
-    {"title": "Pro Tip", "desc": "Right click for context menus.", "color": ft.Colors.ORANGE},
+    {"title": "Search Packages", "desc": "Find any package from nixpkgs. Search by name or description.", "color": ft.Colors.BLUE, "icon": ft.Icons.SEARCH},
+    {"title": "Manage Lists", "desc": "Create Favorites or custom lists to organize your software.", "color": ft.Colors.GREEN, "icon": ft.Icons.LIST},
+    {"title": "Try in Shell", "desc": "Use 'nix-shell' to try packages without installing them permanently.", "color": ft.Colors.PURPLE, "icon": ft.Icons.TERMINAL},
+    {"title": "Inspect Binaries", "desc": "View the binaries installed by a package in the card details.", "color": ft.Colors.ORANGE, "icon": ft.Icons.CODE},
+    {"title": "Build Commands", "desc": "Copy install commands for NixOS, Home Manager, or generic Nix.", "color": ft.Colors.RED, "icon": ft.Icons.COPY},
 ]
 
 # Mapping for string color names to Flet colors

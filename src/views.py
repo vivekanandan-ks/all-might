@@ -45,6 +45,7 @@ def get_cart_view(refresh_cart_view, cart_header, cart_list):
     refresh_cart_view()
     return ft.Container(
         expand=True,
+        padding=20,
         content=ft.Column(
             scroll=ft.ScrollMode.AUTO,
             controls=[
@@ -72,26 +73,36 @@ def get_lists_view(selected_list_name, is_viewing_favourites, refresh_list_detai
 
         return ft.Container(
             expand=True,
+            padding=ft.padding.only(left=20, right=20, bottom=10),
             content=ft.Column(
-                scroll=ft.ScrollMode.AUTO,
+                spacing=0,
                 controls=[
-                    ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[
-                        ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=go_back_to_lists_index), ft.Text(title, size=24, weight=ft.FontWeight.BOLD)]),
-                        ft.Row([
-                            ft.Container(
-                                padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                                content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text(btn_text, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)]),
-                                on_click=run_list_shell,
-                                bgcolor=ft.Colors.BLUE_600,
-                                border_radius=state.get_radius('button'),
-                                ink=True,
-                                tooltip=tooltip_cmd
-                            ),
-                            ft.IconButton(ft.Icons.CONTENT_COPY, on_click=copy_list_command, tooltip=clean_cmd)
+                    ft.Container(
+                        padding=ft.padding.only(bottom=15),
+                        content=ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN, controls=[
+                            ft.Row([ft.IconButton(ft.Icons.ARROW_BACK, on_click=go_back_to_lists_index), ft.Text(title, size=24, weight=ft.FontWeight.BOLD)]),
+                            ft.Row([
+                                ft.Container(
+                                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                                    content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text(btn_text, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)]),
+                                    on_click=run_list_shell,
+                                    bgcolor=ft.Colors.BLUE_600,
+                                    border_radius=state.get_radius('button'),
+                                    ink=True,
+                                    tooltip=tooltip_cmd
+                                ),
+                                ft.IconButton(ft.Icons.CONTENT_COPY, on_click=copy_list_command, tooltip=clean_cmd)
+                            ])
                         ])
-                    ]),
-                    list_detail_col,
-                    ft.Container(height=100) # Spacer for bottom nav
+                    ),
+                    ft.Column(
+                        expand=True,
+                        scroll=ft.ScrollMode.AUTO,
+                        controls=[
+                            list_detail_col,
+                            ft.Container(height=100) # Spacer for bottom nav
+                        ]
+                    )
                 ]
             )
         )
@@ -99,12 +110,22 @@ def get_lists_view(selected_list_name, is_viewing_favourites, refresh_list_detai
         refresh_lists_main_view()
         return ft.Container(
             expand=True,
+            padding=ft.padding.only(left=20, right=20, bottom=10),
             content=ft.Column(
-                scroll=ft.ScrollMode.AUTO,
+                spacing=0,
                 controls=[
-                    ft.Text("My Lists", size=24, weight=ft.FontWeight.BOLD, color="onSurface"),
-                    lists_main_col,
-                    ft.Container(height=100) # Spacer for bottom nav
+                    ft.Container(
+                        padding=ft.padding.only(bottom=15),
+                        content=ft.Text("My Lists", size=24, weight=ft.FontWeight.BOLD, color="onSurface")
+                    ),
+                    ft.Column(
+                        expand=True,
+                        scroll=ft.ScrollMode.AUTO,
+                        controls=[
+                            lists_main_col,
+                            ft.Container(height=100) # Spacer for bottom nav
+                        ]
+                    )
                 ]
             )
         )
@@ -399,7 +420,7 @@ def get_home_view():
                 ft.Text("Welcome to All Might", size=state.get_size(1.15), color="onSurfaceVariant"),
             ]),
             ft.Container(
-                width=300,
+                width=400,
                 content=ft.Column([
                     ft.Text("Updates", size=12, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"),
                     carousel_widget
@@ -1418,7 +1439,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
 
     update_settings_view()
 
-    return ft.Container(padding=10, content=ft.Row(spacing=0, vertical_alignment=ft.CrossAxisAlignment.START, controls=[ft.Container(width=200, content=settings_nav_rail, border=ft.border.only(right=ft.border.BorderSide(1, ft.Colors.OUTLINE_VARIANT)), padding=ft.padding.only(right=10)), settings_content_area], expand=True))
+    return ft.Container(padding=20, content=ft.Row(spacing=0, vertical_alignment=ft.CrossAxisAlignment.START, controls=[ft.Container(width=200, content=settings_nav_rail, border=ft.border.only(right=ft.border.BorderSide(1, ft.Colors.OUTLINE_VARIANT)), padding=ft.padding.only(right=10)), settings_content_area], expand=True))
 
 def make_settings_tile(title, controls, reset_func=None):
     expansion_controls = []

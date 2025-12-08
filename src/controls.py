@@ -146,69 +146,68 @@ class UndoToast(ft.Container):
 class AutoCarousel(ft.Container):
     def __init__(self, data_list):
         super().__init__(
-            width=220, height=120,
-            border_radius=15,
+            width=400, height=160,
+            border_radius=20,
             animate_opacity=300,
-            on_hover=self.handle_hover
+            on_hover=self.handle_hover,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            shadow=ft.BoxShadow(
+                blur_radius=15,
+                spread_radius=1,
+                color=ft.Colors.with_opacity(0.1, "black"),
+                offset=ft.Offset(0, 4)
+            )
         )
         self.data_list = data_list
         self.current_index = 0
         self.running = False
         self.paused = False
 
-        # UI Components
-        self.title_text = ft.Text("", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)
-        self.desc_text = ft.Text("", size=12, color=ft.Colors.WHITE70)
+        self.title_text = ft.Text("", weight=ft.FontWeight.BOLD, size=20, color=ft.Colors.WHITE)
+        self.desc_text = ft.Text("", size=14, color=ft.Colors.WHITE70, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)
+        self.icon_view = ft.Icon(ft.Icons.INFO_OUTLINE, size=48, color=ft.Colors.WHITE30)
 
-        # Border Containers for "Snaking" timer effect
-        self.bar_thickness = 3
-        self.border_bottom = ft.Container(bgcolor="white", height=self.bar_thickness, width=0, bottom=0, left=0)
-        self.border_right = ft.Container(bgcolor="white", width=self.bar_thickness, height=0, bottom=0, right=0)
-        self.border_top = ft.Container(bgcolor="white", height=self.bar_thickness, width=0, top=0, right=0)
-        self.border_left = ft.Container(bgcolor="white", width=self.bar_thickness, height=0, top=0, left=0)
-
+        self.progress_bar = ft.ProgressBar(value=1.0, height=4, color=ft.Colors.WHITE, bgcolor=ft.Colors.TRANSPARENT, border_radius=0)
+        
         self.content_container = ft.Container(
-            padding=15,
+            padding=25,
             expand=True,
-            content=ft.Column(
-                [self.title_text, self.desc_text],
-                spacing=5,
-                alignment=ft.MainAxisAlignment.CENTER
-            )
+            content=ft.Row([
+                ft.Column([self.title_text, self.desc_text], alignment=ft.MainAxisAlignment.CENTER, expand=True, spacing=5),
+                self.icon_view
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
         )
 
-        self.content = ft.Stack(
-            controls=[
-                self.content_container,
-                self.border_bottom,
-                self.border_right,
-                self.border_top,
-                self.border_left
-            ]
-        )
-
+        self.content = ft.Stack([
+            self.content_container,
+            ft.Container(content=self.progress_bar, bottom=0, left=0, right=0)
+        ])
+        
         self.update_content()
 
     def update_content(self):
         item = self.data_list[self.current_index]
-
-        # Glassmorphism Logic
+        base_color = item.get("color", ft.Colors.BLUE)
+        
+        # Gradient background
+        self.gradient = ft.LinearGradient(
+            begin=ft.alignment.top_left,
+            end=ft.alignment.bottom_right,
+            colors=[base_color, ft.Colors.with_opacity(0.4, base_color)]
+        )
+        
         if state.carousel_glass:
-            self.bgcolor = ft.Colors.with_opacity(0.6, item["color"])
-            self.blur = ft.Blur(15, 15, ft.BlurTileMode.MIRROR)
-            self.border = ft.border.all(1, ft.Colors.with_opacity(0.3, ft.Colors.WHITE))
+             self.blur = ft.Blur(20, 20, ft.BlurTileMode.MIRROR)
+             self.border = ft.border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE))
         else:
-            self.bgcolor = item["color"]
-            self.blur = None
-            self.border = None
+             self.blur = None
+             self.border = None
 
-        self.title_text.value = item["title"]
-        self.desc_text.value = item["desc"]
-        if self.page:
-            try:
-                self.update()
-            except:
-                pass
+        self.title_text.value = item.get("title", "")
+        self.desc_text.value = item.get("desc", "")
+        self.icon_view.name = item.get("icon", ft.Icons.INFO_OUTLINE)
+        
+        if self.page: self.update()
 
     def did_mount(self):
         self.running = True
@@ -218,88 +217,38 @@ class AutoCarousel(ft.Container):
         self.running = False
 
     def handle_hover(self, e):
-        if e.data == "true": # Enter hover
-            self.paused = True
-            # Reset bars to full
-            self.set_bars_progress(1.0)
-            self.update_content() # Ensure style matches
-        else: # Exit hover
-            self.paused = False
-            # Thread continues from top loop logic (resets)
-
-    def set_bars_progress(self, progress):
-        # Progress goes from 1.0 (Full) to 0.0 (Empty)
-        # Sequence of vanishing: Bottom-Left -> Bottom-Right -> Top-Right -> Top-Left -> Bottom-Left
-        # 1. Bottom Bar shrinks (1.0 -> 0.75)
-        # 2. Right Bar shrinks (0.75 -> 0.50)
-        # 3. Top Bar shrinks (0.75 -> 0.50)
-        # 3. Top Bar shrinks (0.50 -> 0.25)
-        # 4. Left Bar shrinks (0.25 -> 0.0)
-
-        w_total = 220 # Approximate width
-        h_total = 120 # Approximate height
-
-        # Bottom Bar Logic (0 to 0.25 progress chunk, mapped 0-1)
-        if progress > 0.75:
-            p = (progress - 0.75) * 4
-            self.border_bottom.width = w_total * p
-            self.border_right.height = h_total
-            self.border_top.width = w_total
-            self.border_left.height = h_total
-        elif progress > 0.5:
-            p = (progress - 0.5) * 4
-            self.border_bottom.width = 0
-            self.border_right.height = h_total * p
-            self.border_top.width = w_total
-            self.border_left.height = h_total
-        elif progress > 0.25:
-            p = (progress - 0.25) * 4
-            self.border_bottom.width = 0
-            self.border_right.height = 0
-            self.border_top.width = w_total * p
-            self.border_left.height = h_total
-        else:
-            p = progress * 4
-            self.border_bottom.width = 0
-            self.border_right.height = 0
-            self.border_top.width = 0
-            self.border_left.height = h_total * p
-
-        if self.page:
-            try:
-                self.border_bottom.update()
-                self.border_right.update()
-                self.border_top.update()
-                self.border_left.update()
-            except:
-                pass
-
+        self.paused = (e.data == "true")
+        if self.paused:
+            self.progress_bar.value = 1.0
+            self.update_content()
+            if self.page: self.progress_bar.update()
+        
     def loop(self):
         step = 0.05
         while self.running:
             if self.paused:
                 time.sleep(0.1)
                 continue
-
+                
             duration = max(1, state.carousel_timer)
             steps_total = int(duration / step)
-
-            # Start fresh cycle
-            self.set_bars_progress(1.0)
-
+            
             for i in range(steps_total):
                 if not self.running: return
-                if self.paused: break # Exit loop to restart logic or wait
-
+                if self.paused: break
+                
                 time.sleep(step)
+                # Count down
                 progress = 1.0 - ((i + 1) / steps_total)
-                self.set_bars_progress(progress)
-
-            if self.paused: continue # Don't switch if paused mid-way
-
-            # Switch Item
+                self.progress_bar.value = progress
+                if self.page: self.progress_bar.update()
+                
+            if self.paused: continue
+            
             self.current_index = (self.current_index + 1) % len(self.data_list)
             self.update_content()
+            self.progress_bar.value = 1.0
+            if self.page: self.progress_bar.update()
 
 show_toast_global = None
 show_undo_toast_global = None
@@ -479,35 +428,16 @@ class NixPackageCard(GlassContainer):
                 ) for prog in self.programs_list
             ]
             
-                                bins_control = ft.ExpansionTile(
-            
-                                    title=ft.Row([
-            
-                                        ft.Icon(ft.Icons.TERMINAL, size=size_sm, color=ft.Colors.ORANGE),
-            
-                                        ft.Text(f"Binaries ({len(self.programs_list)})", size=size_sm, color="onSurfaceVariant")
-            
-                                    ], spacing=5),
-            
-                                    tile_padding=ft.padding.all(0),
-            
-                                    children_padding=ft.padding.only(bottom=10),
-            
-                                    controls=[
-            
-                                        ft.Row(controls=bin_chips, wrap=True, spacing=5, run_spacing=5)
-            
-                                    ],
-            
-                                    collapsed_shape=ft.RoundedRectangleBorder(radius=0),
-            
-                                    shape=ft.RoundedRectangleBorder(radius=0),
-            
-                                    maintain_state=True,
-            
-                                    initially_expanded=False
-            
-                                )
+            bins_control = ft.Container(
+                content=ft.Column([
+                     ft.Row([
+                        ft.Icon(ft.Icons.TERMINAL, size=size_sm, color=ft.Colors.ORANGE),
+                        ft.Text(f"Binaries ({len(self.programs_list)})", size=size_sm, color="onSurfaceVariant")
+                    ], spacing=5),
+                    ft.Row(controls=bin_chips, wrap=True, spacing=5, run_spacing=5)
+                ], spacing=10),
+                padding=ft.padding.only(top=10, bottom=5)
+            )
 
         card_content_controls = [
             ft.Row(
