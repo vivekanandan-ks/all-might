@@ -284,8 +284,8 @@ def main(page: ft.Page):
 
     selected_list_name = None
     is_viewing_favourites = False
-    lists_main_col = ft.Column(scroll=ft.ScrollMode.HIDDEN, expand=True)
-    list_detail_col = ft.Column(scroll=ft.ScrollMode.HIDDEN, expand=True)
+    lists_main_col = ft.Column(expand=False)
+    list_detail_col = ft.Column(expand=False)
     lists_badge_count = ft.Text(str(len(state.saved_lists)), size=max(8, badge_size_val/2), color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER)
     lists_badge_container = ft.Container(
         content=lists_badge_count,
@@ -646,7 +646,6 @@ def main(page: ft.Page):
             border_radius=state.get_radius('card')
         )
         lists_main_col.controls.append(fav_card)
-        lists_main_col.controls.append(ft.Container(height=10))
 
         if not state.saved_lists:
              lists_main_col.controls.append(ft.Container(content=ft.Text("No custom lists created yet.", color="onSurfaceVariant"), alignment=ft.alignment.center, padding=20))
@@ -697,7 +696,7 @@ def main(page: ft.Page):
 
         if update_ui and list_detail_col.page: list_detail_col.update()
 
-    content_area = ft.Container(expand=True, padding=20, content=get_home_view())
+    content_area = ft.Container(expand=True, padding=0, content=get_home_view())
     navbar_ref = [None]
     settings_refresh_ref = [None]
 

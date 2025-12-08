@@ -116,10 +116,10 @@ class AppState:
         self.shell_cart_suffix = ""
 
         self.available_channels = [
-            "nixos-25.05", "nixos-unstable", "nixos-24.11", "nixos-24.05"
+            "nixos-25.11", "nixos-25.05", "nixos-unstable", "nixos-24.11", "nixos-24.05"
         ]
         self.active_channels = [
-            "nixos-25.05", "nixos-unstable", "nixos-24.11"
+            "nixos-25.11", "nixos-25.05", "nixos-unstable", "nixos-24.11"
         ]
         self.cart_items = []
         self.favourites = []
