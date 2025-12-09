@@ -287,11 +287,8 @@ class AutoCarousel(ft.Container):
         base_color = item.get("color", ft.Colors.BLUE)
         
         # Gradient background
-        self.gradient = ft.LinearGradient(
-            begin=ft.alignment.top_left,
-            end=ft.alignment.bottom_right,
-            colors=[base_color, ft.Colors.with_opacity(0.4, base_color)]
-        )
+        self.gradient = None
+        self.bgcolor = ft.Colors.with_opacity(0.15, base_color)
         
         if state.carousel_glass:
              self.blur = ft.Blur(20, 20, ft.BlurTileMode.MIRROR)

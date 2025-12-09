@@ -390,7 +390,7 @@ def get_home_view():
 
         main_card = GlassContainer(
             padding=20, border_radius=20,
-            bgcolor=ft.Colors.with_opacity(0.9, base_col),
+            bgcolor=ft.Colors.with_opacity(0.15, base_col),
             tooltip=app_tooltip,
             on_click=app_click,
             content=ft.Column(
@@ -435,7 +435,7 @@ def get_home_view():
 
         main_card = GlassContainer(
             padding=15, border_radius=20,
-            bgcolor=ft.Colors.with_opacity(0.9, base_col),
+            bgcolor=ft.Colors.with_opacity(0.15, base_col),
             tooltip=tip_tooltip,
             on_click=tip_click,
             content=ft.Column(
@@ -482,7 +482,7 @@ def get_home_view():
 
         main_card = GlassContainer(
             padding=15, border_radius=20,
-            bgcolor=ft.Colors.with_opacity(0.9, base_col),
+            bgcolor=ft.Colors.with_opacity(0.15, base_col),
             tooltip=q_tooltip,
             on_click=q_click,
             content=ft.Column(
