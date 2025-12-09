@@ -212,7 +212,7 @@ class SongCard(GlassContainer):
         
         super().__init__(
             padding=15, border_radius=20,
-            bgcolor=ft.Colors.with_opacity(0.9, self.base_col),
+            bgcolor=ft.Colors.with_opacity(0.15, self.base_col),
             content=ft.Container(), # Placeholder
             on_click=self.handle_click
         )
