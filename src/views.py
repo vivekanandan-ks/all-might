@@ -7,7 +7,7 @@ import shlex
 import subprocess
 import time
 import datetime
-from utils import get_mastodon_quote, get_mastodon_feed
+from utils import get_mastodon_quote, get_mastodon_feed, fetch_opengraph_data
 
 def get_search_view(perform_search, channel_dropdown, search_field, search_icon_btn, results_column, result_count_text, filter_badge_container, toggle_filter_menu, refresh_callback=None):
     channel_dropdown.border_radius = state.get_radius('selector')
@@ -196,6 +196,122 @@ def create_stacked_card(content, base_color, width=None, height=None, expand=1):
             ]
         )
     )
+
+class SongCard(GlassContainer):
+    def __init__(self, data_cfg, width=None, height=None):
+        self.cfg = data_cfg
+        self.base_col = COLOR_NAME_MAP.get(self.cfg.get("color"), ft.Colors.BLUE)
+        self.default_url = "https://song.link/https://music.youtube.com/watch?v=CzE7qEPWuG4&list=RDAMVMI7ftgtJYdgs"
+        
+        # Initial State
+        self.title_text = "Loading Song..."
+        self.artist_text = ""
+        self.bg_image = None
+        self.target_url = self.default_url
+        self.custom_tooltip = "Song of the Day"
+        
+        super().__init__(
+            padding=15, border_radius=20,
+            bgcolor=ft.Colors.with_opacity(0.9, self.base_col),
+            content=ft.Container(), # Placeholder
+            on_click=self.handle_click
+        )
+        self.width = width
+        self.height = height
+        
+        self.initialize_state()
+        self.update_card_content()
+
+    def initialize_state(self):
+        if state.song_use_mastodon:
+            if state.song_mastodon_cache:
+                self.title_text = state.song_mastodon_cache.get("text", "...").split("\n")[0]
+                self.artist_text = state.song_mastodon_cache.get("author", "")
+                self.target_url = state.song_mastodon_cache.get("link", "")
+                self.custom_tooltip = f"Open in browser: {self.target_url}"
+        else:
+            self.target_url = self.default_url
+            self.custom_tooltip = f"Open in browser: {self.target_url}"
+            if state.default_song_cache:
+                self.title_text = state.default_song_cache.get("title", "Song of the Day")
+                self.artist_text = "All-Might Pick"
+                self.bg_image = state.default_song_cache.get("image")
+            # Else remains Loading...
+
+    def did_mount(self):
+        if not state.song_use_mastodon and not state.default_song_cache:
+            threading.Thread(target=self.fetch_default_meta, daemon=True).start()
+        elif state.song_use_mastodon and not state.song_mastodon_cache:
+            threading.Thread(target=self.fetch_mastodon_meta, daemon=True).start()
+
+    def fetch_default_meta(self):
+        data = fetch_opengraph_data(self.default_url)
+        if data:
+            state.default_song_cache = data
+            state.save_settings()
+            self.title_text = data.get("title", "Song of the Day")
+            self.artist_text = "All-Might Pick"
+            self.bg_image = data.get("image")
+            self.update_card_content()
+
+    def fetch_mastodon_meta(self):
+        fetched = get_mastodon_quote(state.song_mastodon_account, state.song_mastodon_tag)
+        if fetched:
+            state.song_mastodon_cache = fetched
+            state.last_fetched_song = fetched
+            state.save_settings()
+            self.title_text = fetched.get("text", "...").split("\n")[0]
+            self.artist_text = fetched.get("author", "")
+            self.target_url = fetched.get("link", "")
+            self.custom_tooltip = f"Open in browser: {self.target_url}"
+            self.update_card_content()
+
+    def update_card_content(self):
+        self.tooltip = self.custom_tooltip
+        
+        align_map = {
+            "left": ft.MainAxisAlignment.START,
+            "right": ft.MainAxisAlignment.END,
+            "center": ft.MainAxisAlignment.CENTER
+        }
+        align = align_map.get(self.cfg.get("align", "center"), ft.MainAxisAlignment.CENTER)
+        
+        if self.bg_image:
+            self.padding = 0
+            self.image_src = self.bg_image
+            self.image_fit = ft.ImageFit.COVER
+            
+            text_col = ft.Column(
+                alignment=ft.MainAxisAlignment.END,
+                controls=[
+                    ft.Text("Song of the Day", size=10, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD),
+                    ft.Text(self.title_text, size=14, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                ]
+            )
+            self.content = ft.Container(
+                gradient=ft.LinearGradient(colors=[ft.Colors.TRANSPARENT, ft.Colors.BLACK], begin=ft.alignment.top_center, end=ft.alignment.bottom_center),
+                padding=15,
+                alignment=ft.alignment.bottom_left,
+                content=text_col
+            )
+        else:
+            self.padding = 15
+            self.image_src = None
+            self.content = ft.Column(
+                alignment=ft.MainAxisAlignment.CENTER,
+                controls=[
+                    ft.Row([ft.Text("Song of the Day", size=10, color=ft.Colors.BLACK54, weight=ft.FontWeight.BOLD)], alignment=align),
+                    ft.Row([ft.Icon(ft.Icons.MUSIC_NOTE, size=30, color=ft.Colors.BLACK87)], alignment=align),
+                    ft.Row([ft.Text(self.title_text, size=16, color=ft.Colors.BLACK87, weight=ft.FontWeight.BOLD, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)], alignment=align),
+                    ft.Row([ft.Text(self.artist_text, size=12, color=ft.Colors.BLACK54)], alignment=align)
+                ]
+            )
+        
+        if self.page: self.update()
+
+    def handle_click(self, e):
+        if self.target_url:
+            self.page.launch_url(self.target_url)
 
 def get_home_view():
     state.update_daily_indices()
@@ -392,45 +508,7 @@ def get_home_view():
     cfg = get_cfg("song")
     if cfg["visible"]:
         base_col = get_card_color(cfg["color"])
-        
-        song_title = song_data["title"]
-        song_artist = song_data["artist"]
-        song_tooltip = "Song of the Day"
-        song_click = None
-
-        if state.song_use_mastodon:
-            if not state.song_mastodon_cache:
-                fetched = get_mastodon_quote(state.song_mastodon_account, state.song_mastodon_tag)
-                if fetched:
-                    state.song_mastodon_cache = fetched
-                    state.last_fetched_song = fetched
-                    state.save_settings()
-                elif state.last_fetched_song:
-                    state.song_mastodon_cache = state.last_fetched_song
-            
-            if state.song_mastodon_cache:
-                song_title = state.song_mastodon_cache.get("text", "...").split("\n")[0] # Use first line as title
-                song_artist = state.song_mastodon_cache.get("author", "")
-                link = state.song_mastodon_cache.get("link", "")
-                if link:
-                    song_tooltip = f"Open on Mastodon: {link}"
-                    song_click = create_dynamic_card_click_handler(link)
-
-        main_card = GlassContainer(
-            padding=15, border_radius=20,
-            bgcolor=ft.Colors.with_opacity(0.9, base_col),
-            tooltip=song_tooltip,
-            on_click=song_click,
-            content=ft.Column(
-                alignment=ft.MainAxisAlignment.CENTER,
-                controls=[
-                    ft.Row([ft.Text("Song of the Day", size=10, color=ft.Colors.BLACK54, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
-                    ft.Row([ft.Icon(ft.Icons.MUSIC_NOTE, size=30, color=ft.Colors.BLACK87)], alignment=get_alignment(cfg["align"])),
-                    ft.Row([ft.Text(song_title, size=16, color=ft.Colors.BLACK87, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
-                    ft.Row([ft.Text(song_artist, size=12, color=ft.Colors.BLACK54)], alignment=get_alignment(cfg["align"]))
-                ]
-            )
-        )
+        main_card = SongCard(cfg, width=cfg["w"], height=cfg["h"])
         cards_row2.append(create_stacked_card(main_card, base_col, height=cfg["h"], width=cfg["w"], expand=1))
 
     # --- Carousel Data Logic ---
