@@ -258,7 +258,7 @@ def main(page: ft.Page):
     
     cart_header_title = ft.Text("Your Cart (0 items)", size=24, weight=ft.FontWeight.W_900, color="onSurface")
     cart_header_save_btn = ft.ElevatedButton("Save cart as list", icon=ft.Icons.ADD, bgcolor=ft.Colors.TEAL_700, color=ft.Colors.WHITE)
-    cart_header_clear_btn = ft.IconButton(ft.Icons.DELETE_SWEEP, tooltip="Clear Cart", icon_color=ft.Colors.RED_400)
+    cart_header_clear_btn = ft.IconButton(ft.Icons.CLEANING_SERVICES, tooltip="Clear Cart", icon_color=ft.Colors.RED_400)
     cart_header_shell_btn_container = ft.Container(
         padding=ft.padding.symmetric(horizontal=12, vertical=8),
         content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text("Try Cart in Shell", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE, size=12)]),
@@ -302,7 +302,7 @@ def main(page: ft.Page):
         
         show_toast("Status Refreshed")
 
-    cart_header_refresh_btn = ft.IconButton(ft.Icons.REFRESH, tooltip="Refresh Installed Status", on_click=global_refresh_action)
+    cart_header_refresh_btn = ft.IconButton(ft.Icons.REFRESH, tooltip="Refresh Installed Status", on_click=global_refresh_action, visible=state.show_refresh_button)
 
     cart_header = ft.Container(
         padding=ft.padding.only(bottom=10, top=10),

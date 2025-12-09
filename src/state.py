@@ -74,6 +74,9 @@ class AppState:
         self.home_card_config = CARD_DEFAULTS.copy()
         self.carousel_timer = 10
         self.carousel_glass = True # Default to glassmorphism
+        
+        # Debug Settings
+        self.show_refresh_button = True
 
         # Quote Settings
         self.use_mastodon_quote = True
@@ -105,7 +108,13 @@ class AppState:
         self.song_mastodon_cache = None
         self.last_fetched_song = None
 
-        self.installed_enrich_metadata = True
+        # Carousel Settings
+        self.carousel_use_mastodon = True
+        self.carousel_mastodon_account = ""
+        self.carousel_mastodon_tag = ""
+        self.carousel_mastodon_cache = None
+        self.last_fetched_carousel = None
+
         self.auto_refresh_ui = False
         self.auto_refresh_interval = 10
         self.installed_items = {} # pname -> list of {'key': key, 'attrPath': attrPath}
@@ -251,7 +260,11 @@ class AppState:
                     self.song_mastodon_tag = data.get("song_mastodon_tag", "")
                     self.last_fetched_song = data.get("last_fetched_song", None)
 
-                    self.installed_enrich_metadata = data.get("installed_enrich_metadata", True)
+                    self.carousel_use_mastodon = data.get("carousel_use_mastodon", True)
+                    self.carousel_mastodon_account = data.get("carousel_mastodon_account", "")
+                    self.carousel_mastodon_tag = data.get("carousel_mastodon_tag", "")
+                    self.last_fetched_carousel = data.get("last_fetched_carousel", None)
+
                     self.auto_refresh_ui = data.get("auto_refresh_ui", False)
                     self.auto_refresh_interval = data.get("auto_refresh_interval", 10)
 
@@ -259,6 +272,7 @@ class AppState:
                     self.last_daily_date = data.get("last_daily_date", "")
                     self.carousel_timer = data.get("carousel_timer", 10)
                     self.carousel_glass = data.get("carousel_glass", True)
+                    self.show_refresh_button = data.get("show_refresh_button", True)
 
                     self.available_channels = data.get("available_channels", self.available_channels)
                     self.active_channels = data.get("active_channels", self.active_channels)
@@ -346,7 +360,11 @@ class AppState:
                 "song_mastodon_tag": self.song_mastodon_tag,
                 "last_fetched_song": self.last_fetched_song,
 
-                "installed_enrich_metadata": self.installed_enrich_metadata,
+                "carousel_use_mastodon": self.carousel_use_mastodon,
+                "carousel_mastodon_account": self.carousel_mastodon_account,
+                "carousel_mastodon_tag": self.carousel_mastodon_tag,
+                "last_fetched_carousel": self.last_fetched_carousel,
+
                 "auto_refresh_ui": self.auto_refresh_ui,
                 "auto_refresh_interval": self.auto_refresh_interval,
 
@@ -354,6 +372,102 @@ class AppState:
                 "last_daily_date": self.last_daily_date,
                 "carousel_timer": self.carousel_timer,
                 "carousel_glass": self.carousel_glass,
+                "show_refresh_button": self.show_refresh_button,
+
+                "available_channels": self.available_channels,
+                "active_channels": self.active_channels,
+                "shell_single_prefix": self.shell_single_prefix,
+                "shell_single_suffix": self.shell_single_suffix,
+                "shell_cart_prefix": self.shell_cart_prefix,
+                "shell_cart_suffix": self.shell_cart_suffix,
+                "cart_items": self.cart_items,
+                "favourites": self.favourites,
+                "saved_lists": self.saved_lists,
+                "recent_activity": self.recent_activity
+            }
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"Error saving settings: {e}")
+
+    def save_settings(self):
+        try:
+            Path(CONFIG_DIR).mkdir(parents=True, exist_ok=True)
+            data = {
+                "username": self.username,
+                "default_channel": self.default_channel,
+                "theme_mode": self.theme_mode,
+                "theme_color": self.theme_color,
+                "confirm_timer": self.confirm_timer,
+                "undo_timer": self.undo_timer,
+                "nav_badge_size": self.nav_badge_size,
+                "search_limit": self.search_limit,
+
+                "floating_nav": self.floating_nav,
+                "adaptive_nav": self.adaptive_nav,
+                "glass_nav": self.glass_nav,
+                "nav_bar_height": self.nav_bar_height,
+                "nav_bar_width": self.nav_bar_width,
+                "nav_icon_spacing": self.nav_icon_spacing,
+                "sync_nav_spacing": self.sync_nav_spacing,
+
+                "global_radius": self.global_radius,
+                "nav_radius": self.nav_radius,
+                "sync_nav_radius": self.sync_nav_radius,
+                "card_radius": self.card_radius,
+                "sync_card_radius": self.sync_card_radius,
+                "button_radius": self.button_radius,
+                "sync_button_radius": self.sync_button_radius,
+                "search_radius": self.search_radius,
+                "sync_search_radius": self.sync_search_radius,
+                "selector_radius": self.selector_radius,
+                "sync_selector_radius": self.sync_selector_radius,
+                "footer_radius": self.footer_radius,
+                "sync_footer_radius": self.sync_footer_radius,
+                "chip_radius": self.chip_radius,
+                "sync_chip_radius": self.sync_chip_radius,
+
+                "global_font_size": self.global_font_size,
+                "title_font_size": self.title_font_size,
+                "sync_title_font": self.sync_title_font,
+                "body_font_size": self.body_font_size,
+                "sync_body_font": self.sync_body_font,
+                "small_font_size": self.small_font_size,
+                "sync_small_font": self.sync_small_font,
+                "nav_font_size": self.nav_font_size,
+                "sync_nav_font": self.sync_nav_font,
+
+                "home_card_config": self.home_card_config,
+                "use_mastodon_quote": self.use_mastodon_quote,
+                "quote_mastodon_account": self.quote_mastodon_account,
+                "quote_mastodon_tag": self.quote_mastodon_tag,
+                "quote_style_italic": self.quote_style_italic,
+                "quote_style_bold": self.quote_style_bold,
+                "last_fetched_quote": self.last_fetched_quote,
+
+                "app_use_mastodon": self.app_use_mastodon,
+                "app_mastodon_account": self.app_mastodon_account,
+                "app_mastodon_tag": self.app_mastodon_tag,
+                "last_fetched_app": self.last_fetched_app,
+
+                "tip_use_mastodon": self.tip_use_mastodon,
+                "tip_mastodon_account": self.tip_mastodon_account,
+                "tip_mastodon_tag": self.tip_mastodon_tag,
+                "last_fetched_tip": self.last_fetched_tip,
+
+                "song_use_mastodon": self.song_use_mastodon,
+                "song_mastodon_account": self.song_mastodon_account,
+                "song_mastodon_tag": self.song_mastodon_tag,
+                "last_fetched_song": self.last_fetched_song,
+
+                "auto_refresh_ui": self.auto_refresh_ui,
+                "auto_refresh_interval": self.auto_refresh_interval,
+
+                "daily_indices": self.daily_indices,
+                "last_daily_date": self.last_daily_date,
+                "carousel_timer": self.carousel_timer,
+                "carousel_glass": self.carousel_glass,
+                "show_refresh_button": self.show_refresh_button,
 
                 "available_channels": self.available_channels,
                 "active_channels": self.active_channels,
@@ -584,11 +698,18 @@ class AppState:
     def _get_track_key(self, pname, channel):
         return f"{pname}::{channel}"
 
-    def track_install(self, pname, channel):
+    def track_install(self, pname, channel, attr_name=None, version=None, description=None, homepage=None, license_set=None, source_url=None, programs=None):
         key = self._get_track_key(pname, channel)
         self.tracked_installs[key] = {
             "pname": pname,
+            "attr_name": attr_name,
             "channel": channel,
+            "version": version,
+            "description": description,
+            "homepage": homepage,
+            "license": license_set,
+            "source": source_url,
+            "programs": programs,
             "installed_at": datetime.datetime.now().isoformat()
         }
         self.save_tracking()
@@ -633,6 +754,7 @@ class AppState:
             data = json.loads(result.stdout)
             elements = data.get("elements", {})
             new_items = {}
+            installed_pnames = set()
             
             for key, info in elements.items():
                 store_paths = info.get("storePaths", [])
@@ -640,27 +762,85 @@ class AppState:
                 if not store_paths:
                     continue
                 
-                basename = os.path.basename(store_paths[0])
-                # Remove hash (32 chars) + dash
-                if len(basename) > 33 and basename[32] == '-':
-                    rest = basename[33:]
-                else:
-                    rest = basename
+                # Heuristic: Pick the store path that looks most like the package main path
+                # Usually it ends with the version number.
+                best_store_path = store_paths[0]
+                version_match_regex = re.compile(r'-(\d+(\.\d+)*[a-zA-Z0-9_\.]*)$')
 
-                # Split name and version
-                match = re.search(r'-(\d)', rest)
-                if match:
-                    name = rest[:match.start()]
-                else:
-                    name = rest
+                best_version = "?"
+                best_name = "?"
+
+                # Iterate to find the best candidate in storePaths
+                found_version = False
+                for path in store_paths:
+                    basename = os.path.basename(path)
+                    # Remove hash (32 chars) + dash = 33 chars
+                    if len(basename) > 33 and basename[32] == '-':
+                         rest = basename[33:]
+                    else:
+                         rest = basename
+                    
+                    # Check for version match at end
+                    match = version_match_regex.search(rest)
+                    if match:
+                         best_store_path = path
+                         best_version = match.group(1)
+                         best_name = rest[:match.start()]
+                         found_version = True
+                         break # Found a good one
                 
-                if name not in new_items:
-                    new_items[name] = []
-                new_items[name].append({'key': key, 'attrPath': attr_path})
+                if not found_version:
+                     # Fallback to first path logic if no clear version found
+                     basename = os.path.basename(best_store_path)
+                     if len(basename) > 33 and basename[32] == '-':
+                         rest = basename[33:]
+                     else:
+                         rest = basename
+                     
+                     # Simple split fallback
+                     match = re.search(r'-(\d)', rest)
+                     if match:
+                        best_name = rest[:match.start()]
+                        best_version = rest[match.start()+1:]
+                     else:
+                        best_name = rest
+                        best_version = "?"
+
+                if best_name not in new_items:
+                    new_items[best_name] = []
+                new_items[best_name].append({'key': key, 'attrPath': attr_path, 'version': best_version})
+                installed_pnames.add(best_name)
             
             self.installed_items = new_items
+
+            # Reconcile Tracking: Remove tracked items that are no longer installed
+            keys_to_remove = []
+            for key, info in self.tracked_installs.items():
+                pname = info.get("pname")
+                if pname not in installed_pnames:
+                    keys_to_remove.append(key)
+            
+            if keys_to_remove:
+                for key in keys_to_remove:
+                    del self.tracked_installs[key]
+                self.save_tracking()
+
         except Exception as e:
             print(f"Error refreshing cache: {e}")
+
+    def get_installed_version(self, pname):
+        # 1. Try to get version from tracking if available (most accurate for what we installed)
+        tracked_channel = self.get_tracked_channel(pname)
+        if tracked_channel:
+             key = self._get_track_key(pname, tracked_channel)
+             info = self.tracked_installs.get(key)
+             if info and info.get("version"):
+                 return info.get("version")
+
+        # 2. Fallback to parsed version from cache (for external apps)
+        if pname in self.installed_items and self.installed_items[pname]:
+            return self.installed_items[pname][0].get('version', '?')
+        return None
 
     def is_package_installed(self, pname, search_attr_name=None):
         if pname not in self.installed_items:

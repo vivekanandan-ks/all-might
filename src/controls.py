@@ -352,16 +352,18 @@ show_undo_toast_global = None
 show_delayed_toast_global = None
 
 class NixPackageCard(GlassContainer):
-    def __init__(self, package_data, page_ref, initial_channel, on_cart_change=None, is_cart_view=False, show_toast_callback=None, on_menu_open=None):
+    def __init__(self, package_data, page_ref, initial_channel, on_cart_change=None, is_cart_view=False, show_toast_callback=None, on_menu_open=None, on_install_change=None):
         self.pkg = package_data
         self.page_ref = page_ref
         self.on_cart_change = on_cart_change
         self.is_cart_view = is_cart_view
         self.show_toast = show_toast_callback
         self.on_menu_open = on_menu_open
+        self.on_install_change = on_install_change
         self.selected_channel = initial_channel
 
         self.pname = self.pkg.get("package_pname", "Unknown")
+        self.attr_name = self.pkg.get("package_attr_name", self.pname)
         self.version = self.pkg.get("package_pversion", "?")
         description = self.pkg.get("package_description") or "No description available."
         homepage_list = self.pkg.get("package_homepage", [])
@@ -375,6 +377,12 @@ class NixPackageCard(GlassContainer):
         # New: Tracking & Installed Status
         self.is_installed = state.is_package_installed(self.pname)
         self.is_all_might = state.is_tracked(self.pname, self.selected_channel)
+        
+        # Fallback: If installed and tracked on another channel, consider it All-Might managed
+        if self.is_installed and not self.is_all_might:
+             if state.get_tracked_channel(self.pname):
+                 self.is_all_might = True
+
         self.element_name = self.pkg.get("package_element_name", "")
 
         # Fallback: if tracked but not in cache (maybe cache stale), trust tracking?
@@ -398,16 +406,29 @@ class NixPackageCard(GlassContainer):
         size_tag = state.get_font_size('small') * 0.9
 
         self.channel_text = ft.Text(f"{self.version} ({self.selected_channel})", size=size_sm, color=text_col)
-        channel_menu_items = [ft.PopupMenuItem(text=ch, on_click=self.change_channel, data=ch) for ch in state.active_channels]
-
-        border_col = ft.Colors.with_opacity(0.3, state.get_base_color())
-        self.channel_selector = ft.Container(
-            padding=ft.padding.symmetric(horizontal=8, vertical=4),
-            border_radius=state.get_radius('selector'),
-            border=ft.border.all(1, border_col),
-            content=ft.Row(spacing=4, controls=[self.channel_text, ft.Icon(ft.Icons.ARROW_DROP_DOWN, color=text_col, size=size_sm)]),
+        
+        self.installed_version = state.get_installed_version(self.pname)
+        
+        self.channel_dropdown = ft.PopupMenuButton(
+            content=ft.Container(
+                padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                border_radius=state.get_radius('selector'),
+                border=ft.border.all(1, ft.Colors.with_opacity(0.3, state.get_base_color())),
+                content=ft.Row(spacing=4, controls=[
+                    self.channel_text,
+                    ft.Icon(ft.Icons.ARROW_DROP_DOWN, color=text_col, size=size_sm)
+                ]),
+            ),
+            items=self.build_channel_menu_items(),
+            tooltip="Select Channel"
         )
-        self.channel_dropdown = ft.PopupMenuButton(content=self.channel_selector, items=channel_menu_items, tooltip="Select Channel")
+
+        self.channel_control_area = ft.Column(
+             spacing=0,
+             controls=[self.channel_dropdown],
+             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+             alignment=ft.MainAxisAlignment.CENTER
+        )
 
         self.try_btn_icon = ft.Icon(ft.Icons.PLAY_ARROW, size=size_norm + 2, color=ft.Colors.WHITE)
         self.try_btn_text = ft.Text("Run without installing", weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE, size=size_norm)
@@ -531,20 +552,24 @@ class NixPackageCard(GlassContainer):
         # Tracking Tags
         self.installed_chip = None
         if self.is_installed:
-             if self.is_all_might:
-                 self.installed_chip = ft.Container(
-                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
-                    border_radius=state.get_radius('chip'),
-                    bgcolor=ft.Colors.with_opacity(0.8, ft.Colors.PURPLE_700),
-                    content=ft.Text("Installed with All-Might", size=size_tag, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)
-                 )
-             else:
-                 self.installed_chip = ft.Container(
-                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
-                    border_radius=state.get_radius('chip'),
-                    bgcolor=ft.Colors.with_opacity(0.8, ft.Colors.GREY_700),
-                    content=ft.Text("External", size=size_tag, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)
-                 )
+             display_version = self.installed_version if self.installed_version else "?"
+             manager = "All-Might" if self.is_all_might else "External"
+             
+             # Try to get a cleaner origin/channel string
+             # self.selected_channel usually holds "nixos-unstable" or "nixos-24.11"
+             # If external, it might be the inferred channel.
+             origin = self.selected_channel
+             
+             chip_text = f"Installed ({display_version}) with {manager} from {origin}"
+             
+             bg_col = ft.Colors.PURPLE_700 if self.is_all_might else ft.Colors.GREY_700
+             
+             self.installed_chip = ft.Container(
+                padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                border_radius=state.get_radius('chip'),
+                bgcolor=ft.Colors.with_opacity(0.8, bg_col),
+                content=ft.Text(chip_text, size=size_tag, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)
+             )
 
         footer_size = size_sm
 
@@ -591,19 +616,29 @@ class NixPackageCard(GlassContainer):
 
         # Header Row Construction
         header_row_controls = [ 
-            ft.Text(self.pname, weight=ft.FontWeight.BOLD, size=size_lg, color="onSurface"),
+            ft.Text(self.attr_name, weight=ft.FontWeight.BOLD, size=size_lg, color="onSurface"),
             self.tag_chip
         ]
+        
+        left_col_controls = [ft.Row(header_row_controls)]
         if self.installed_chip:
-            header_row_controls.append(self.installed_chip)
+            left_col_controls.append(ft.Row([self.installed_chip]))
+
+        # Description Rendering
+        # Filter out "Installed from..." or "Installed via..." descriptions if we are showing the chip
+        is_default_desc = description.startswith("Installed from") or description.startswith("Installed via") or description.startswith("flake:") or "/" in description and len(description) < 60 and " " not in description
+        
+        desc_control = None
+        if not is_default_desc:
+             desc_control = ft.Container(content=ft.Text(description, size=size_norm, color="onSurfaceVariant", no_wrap=False, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS), padding=ft.padding.only(bottom=5))
 
         card_content_controls = [
             ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 controls=[
-                    ft.Column(spacing=2, controls=[ft.Row(header_row_controls)]),
+                    ft.Column(spacing=2, controls=left_col_controls),
                     ft.Row(spacing=5, controls=[
-                        self.channel_dropdown,
+                        self.channel_control_area,
                         self.install_btn,
                         self.uninstall_btn,
                         self.unified_action_bar,
@@ -612,15 +647,20 @@ class NixPackageCard(GlassContainer):
                         self.cart_btn
                     ])
                 ]
-            ),
-            ft.Container(content=ft.Text(description, size=size_norm, color="onSurfaceVariant", no_wrap=False, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS), padding=ft.padding.only(bottom=5)),
+            )
+        ]
+        
+        if desc_control:
+            card_content_controls.append(desc_control)
+            
+        card_content_controls.append(
             ft.Container(
                 bgcolor=ft.Colors.with_opacity(0.05, state.get_base_color()),
                 border_radius=state.get_radius('footer'),
                 padding=4,
                 content=ft.Row(wrap=False, scroll=ft.ScrollMode.HIDDEN, controls=footer_items, spacing=10)
             )
-        ]
+        )
 
         if bins_control:
             card_content_controls.append(
@@ -633,6 +673,17 @@ class NixPackageCard(GlassContainer):
         content = ft.Column(spacing=4, controls=card_content_controls)
         super().__init__(content=content, padding=12, opacity=0.15, border_radius=state.get_radius('card'))
         self.update_copy_tooltip()
+
+    def build_channel_menu_items(self):
+        tracked_channel = state.get_tracked_channel(self.pname)
+        items = []
+        for ch in state.active_channels:
+             content_row = ft.Row([ft.Text(ch)], alignment=ft.MainAxisAlignment.START, spacing=5)
+             
+             items.append(
+                 ft.PopupMenuItem(content=content_row, on_click=self.change_channel, data=ch)
+             )
+        return items
 
     def handle_install_request(self, e):
         # Confirmation Dialog (Simple)
@@ -688,15 +739,36 @@ class NixPackageCard(GlassContainer):
                 
                 if process.returncode == 0:
                     output_column.controls.append(ft.Text("Installation Successful!", color="green", weight="bold"))
-                    state.track_install(self.pname, self.selected_channel)
+                    
+                    file_path = self.pkg.get("package_position", "").split(":")[0]
+                    source_url = f"https://github.com/NixOS/nixpkgs/blob/master/{file_path}" if file_path else ""
+                    
+                    state.track_install(
+                        self.pname, 
+                        self.selected_channel,
+                        attr_name=self.attr_name,
+                        version=self.version,
+                        description=self.pkg.get("package_description"),
+                        homepage=self.pkg.get("package_homepage", []),
+                        license_set=self.pkg.get("package_license_set", []),
+                        source_url=source_url,
+                        programs=self.programs_list
+                    )
                     state.refresh_installed_cache()
                     
                     self.is_installed = True
                     self.is_all_might = True
+                    
+                    self.installed_version = state.get_installed_version(self.pname)
+                    
+                    self.channel_dropdown.items = self.build_channel_menu_items()
+                    self.channel_dropdown.update()
+
                     self.install_btn.visible = False
                     self.uninstall_btn.visible = True
                     self.update()
                     if self.on_cart_change: self.on_cart_change()
+                    if self.on_install_change: self.on_install_change()
                 else:
                     output_column.controls.append(ft.Text(f"Process exited with code {process.returncode}", color="red"))
 
@@ -722,15 +794,28 @@ class NixPackageCard(GlassContainer):
             if self.show_toast: self.show_toast(f"Uninstalling {self.pname}...")
             try:
                 subprocess.run(shlex.split(final_cmd), check=True)
-                state.untrack_install(self.pname, self.selected_channel)
+                
+                # Smart Untrack
+                if state.is_tracked(self.pname, self.selected_channel):
+                    state.untrack_install(self.pname, self.selected_channel)
+                else:
+                    tracked_ch = state.get_tracked_channel(self.pname)
+                    if tracked_ch:
+                        state.untrack_install(self.pname, tracked_ch)
+
                 state.refresh_installed_cache() # Refresh cache
                 
                 if self.show_toast: self.show_toast(f"Uninstalled {self.pname}")
                 self.is_installed = False
+                
+                self.channel_dropdown.items = self.build_channel_menu_items()
+                self.channel_dropdown.update()
+
                 self.install_btn.visible = True
                 self.uninstall_btn.visible = False
                 self.update()
                 if self.on_cart_change: self.on_cart_change()
+                if self.on_install_change: self.on_install_change()
             except Exception as ex:
                 if self.show_toast: self.show_toast(f"Uninstall failed: {ex}")
 
@@ -868,14 +953,25 @@ class NixPackageCard(GlassContainer):
             if results and "error" in results[0]:
                  self.channel_text.value = "Error"
             else:
+                # Priority 1: Match by exact package_attr_name
+                found = False
                 for r in results:
-                    if r.get("package_pname") == self.pname:
+                    if r.get("package_attr_name") == self.attr_name:
                         new_version = r.get("package_pversion", "?")
+                        found = True
                         break
-                else:
-                    if results: new_version = results[0].get("package_pversion", "?")
+                
+                # Priority 2: Fallback to pname match if not found
+                if not found:
+                    for r in results:
+                        if r.get("package_pname") == self.pname:
+                            new_version = r.get("package_pversion", "?")
+                            break
+                    else:
+                        if results: new_version = results[0].get("package_pversion", "?")
+
                 self.version = new_version
-                self.channel_text.value = f"{self.version} ({self.selected_channel})"
+                self.channel_text.value = f"{self.version} ({new_channel})"
 
             self.selected_channel = new_channel
             self.channel_text.update()

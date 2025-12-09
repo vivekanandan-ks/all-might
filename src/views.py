@@ -7,7 +7,7 @@ import shlex
 import subprocess
 import time
 import datetime
-from utils import get_mastodon_quote
+from utils import get_mastodon_quote, get_mastodon_feed
 
 def get_search_view(perform_search, channel_dropdown, search_field, search_icon_btn, results_column, result_count_text, filter_badge_container, toggle_filter_menu, refresh_callback=None):
     channel_dropdown.border_radius = state.get_radius('selector')
@@ -24,7 +24,7 @@ def get_search_view(perform_search, channel_dropdown, search_field, search_icon_
         ft.Container(content=ft.Stack([ft.IconButton(ft.Icons.FILTER_LIST, on_click=lambda e: toggle_filter_menu(True)), filter_badge_container]))
     ]
     
-    if refresh_callback:
+    if refresh_callback and state.show_refresh_button:
         header_controls.append(ft.IconButton(ft.Icons.REFRESH, tooltip="Refresh Installed Status", on_click=refresh_callback))
 
     return ft.Container(
@@ -55,11 +55,19 @@ def get_cart_view(refresh_cart_view, cart_header, cart_list):
         expand=True,
         padding=20,
         content=ft.Column(
-            scroll=ft.ScrollMode.AUTO,
             controls=[
                 cart_header, 
-                cart_list,
-                ft.Container(height=100) # Spacer for bottom nav
+                ft.Container(
+                    expand=True,
+                    content=ft.Column(
+                        expand=True,
+                        scroll=ft.ScrollMode.AUTO,
+                        controls=[
+                            cart_list,
+                            ft.Container(height=100) # Spacer for bottom nav
+                        ]
+                    )
+                )
             ]
         )
     )
@@ -92,7 +100,7 @@ def get_lists_view(selected_list_name, is_viewing_favourites, refresh_list_detai
             ),
             ft.IconButton(ft.Icons.CONTENT_COPY, on_click=copy_list_command, tooltip=clean_cmd)
         ]
-        if refresh_callback:
+        if refresh_callback and state.show_refresh_button:
             header_actions.append(ft.IconButton(ft.Icons.REFRESH, tooltip="Refresh Installed Status", on_click=refresh_callback))
 
         return ft.Container(
@@ -133,7 +141,7 @@ def get_lists_view(selected_list_name, is_viewing_favourites, refresh_list_detai
                             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                             controls=[
                                 ft.Text("My Lists", size=24, weight=ft.FontWeight.BOLD, color="onSurface"),
-                                ft.IconButton(ft.Icons.REFRESH, tooltip="Refresh Installed Status", on_click=refresh_callback) if refresh_callback else ft.Container()
+                                ft.IconButton(ft.Icons.REFRESH, tooltip="Refresh Installed Status", on_click=refresh_callback) if refresh_callback and state.show_refresh_button else ft.Container()
                             ]
                         )
                     ),
@@ -425,8 +433,67 @@ def get_home_view():
         )
         cards_row2.append(create_stacked_card(main_card, base_col, height=cfg["h"], width=cfg["w"], expand=1))
 
-    # carousel_widget = AutoCarousel(CAROUSEL_DATA)
-    carousel_widget = ft.Container(height=160, bgcolor=ft.Colors.BLUE_GREY_900, border_radius=20, content=ft.Text("Carousel Placeholder", color="white", size=20), alignment=ft.alignment.center)
+    # --- Carousel Data Logic ---
+    carousel_items = []
+    
+    # Default/Fallback to Random Tips immediately (so UI doesn't block)
+    import random
+    tips_pool = list(DAILY_TIPS)
+    random.shuffle(tips_pool)
+    selected_tips = tips_pool[:5]
+    
+    colors = [ft.Colors.BLUE, ft.Colors.PURPLE, ft.Colors.ORANGE, ft.Colors.TEAL, ft.Colors.INDIGO]
+    for i, tip in enumerate(selected_tips):
+        carousel_items.append({
+            "title": tip.get("title", "Nix Tip"),
+            "desc": tip.get("code", ""),
+            "icon": ft.Icons.LIGHTBULB_OUTLINE,
+            "color": colors[i % len(colors)]
+        })
+    
+    # Use cached data if available
+    if state.carousel_use_mastodon and state.carousel_mastodon_cache:
+        cached_items = []
+        for i, item in enumerate(state.carousel_mastodon_cache):
+            cached_items.append({
+                "title": "Community Tip",
+                "desc": item.get("text", "")[:150] + "..." if len(item.get("text", "")) > 150 else item.get("text", ""),
+                "icon": ft.Icons.LIGHTBULB,
+                "color": colors[i % len(colors)]
+            })
+        if cached_items:
+             carousel_items = cached_items
+
+    carousel_widget = AutoCarousel(carousel_items)
+
+    # Background fetch for fresh data
+    def fetch_fresh_carousel_data():
+        if state.carousel_use_mastodon and state.carousel_mastodon_account and state.carousel_mastodon_tag:
+            try:
+                feed = get_mastodon_feed(state.carousel_mastodon_account, state.carousel_mastodon_tag, limit=5)
+                if feed:
+                    state.carousel_mastodon_cache = feed
+                    state.last_fetched_carousel = feed
+                    state.save_settings()
+                    
+                    new_items = []
+                    for i, item in enumerate(feed):
+                        new_items.append({
+                            "title": "Community Tip",
+                            "desc": item.get("text", "")[:150] + "..." if len(item.get("text", "")) > 150 else item.get("text", ""),
+                            "icon": ft.Icons.LIGHTBULB,
+                            "color": colors[i % len(colors)]
+                        })
+                    
+                    if new_items:
+                        carousel_widget.data_list = new_items
+                        carousel_widget.current_index = 0
+                        carousel_widget.update_content()
+                        # carousel_widget.update() # update_content calls update if page exists
+            except Exception as e:
+                print(f"Background fetch failed: {e}")
+
+    threading.Thread(target=fetch_fresh_carousel_data, daemon=True).start()
 
     controls = []
 
@@ -442,7 +509,7 @@ def get_home_view():
             ft.Container(
                 width=400,
                 content=ft.Column([
-                    ft.Text("Updates", size=12, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"),
+                    ft.Text("App tips 💡", size=12, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"),
                     carousel_widget
                 ])
             )
@@ -1034,6 +1101,12 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                     state.song_mastodon_tag = ""
                     state.song_mastodon_cache = None
 
+                if card_key == "carousel":
+                    state.carousel_use_mastodon = True
+                    state.carousel_mastodon_account = ""
+                    state.carousel_mastodon_tag = ""
+                    state.carousel_mastodon_cache = None
+
                 if settings_main_column.page:
                     switch_visible.update()
                     slider_height.update()
@@ -1168,6 +1241,30 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 ft.TextField(label="Tag", value=state.song_mastodon_tag, on_blur=update_song_tag, text_size=12),
             ])
 
+        elif card_key == "carousel":
+            def update_carousel_mastodon(e):
+                state.carousel_use_mastodon = e.control.value
+                state.save_settings()
+                state.carousel_mastodon_cache = None
+
+            def update_carousel_account(e):
+                state.carousel_mastodon_account = e.control.value
+                state.save_settings()
+                state.carousel_mastodon_cache = None
+
+            def update_carousel_tag(e):
+                state.carousel_mastodon_tag = e.control.value
+                state.save_settings()
+                state.carousel_mastodon_cache = None
+
+            tile_content.extend([
+                ft.Divider(),
+                ft.Text("Dynamic Source (Mastodon)", weight=ft.FontWeight.BOLD),
+                ft.Row([ft.Text("Enable RSS Fetch:"), ft.Switch(value=state.carousel_use_mastodon, on_change=update_carousel_mastodon)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.TextField(label="Account", value=state.carousel_mastodon_account, on_blur=update_carousel_account, text_size=12),
+                ft.TextField(label="Tag", value=state.carousel_mastodon_tag, on_blur=update_carousel_tag, text_size=12),
+            ])
+
         return make_settings_tile(label, tile_content, reset_func=reset_card_defaults)
 
     def get_settings_controls(category):
@@ -1178,6 +1275,8 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 ft.Text("Home Page Configuration", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
                 ft.Row([ft.Text("Carousel Timer (s):"), carousel_timer_input], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.Row([ft.Text("Countdown Effect Animation:"), ft.Switch(value=state.carousel_glass, on_change=update_carousel_glass)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.Container(height=10),
+                create_card_config_tile("carousel", "App Tips Carousel"),
                 ft.Container(height=10),
                 create_card_config_tile("app", "Random App Card"),
                 ft.Container(height=10),
@@ -1410,10 +1509,6 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 ])
             ]
         elif category == "installed":
-            def update_enrich_metadata(e):
-                state.installed_enrich_metadata = e.control.value
-                state.save_settings()
-
             def update_auto_refresh(e):
                 state.auto_refresh_ui = e.control.value
                 state.save_settings()
@@ -1431,19 +1526,23 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
 
             controls_list = [
                 ft.Text("Installed Apps", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
-                make_settings_tile("Data Fetching", [
-                    ft.Text("Enrich Metadata from NixOS Search", weight=ft.FontWeight.BOLD),
-                    ft.Text("Fetch description, homepage, license, etc. by searching for the package online. This might slow down the loading of installed apps list.", size=12, color="onSurfaceVariant"),
-                    ft.Container(height=10),
-                    ft.Row([ft.Text("Enable Online Search:"), ft.Switch(value=state.installed_enrich_metadata, on_change=update_enrich_metadata)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-                ]),
-                ft.Container(height=10),
                 make_settings_tile("Refresh Settings", [
                     ft.Text("Auto Refresh UI", weight=ft.FontWeight.BOLD),
                     ft.Text("Automatically check installed packages status in background.", size=12, color="onSurfaceVariant"),
                     ft.Container(height=10),
                     ft.Row([ft.Text("Enable Auto Refresh:"), ft.Switch(value=state.auto_refresh_ui, on_change=update_auto_refresh)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                     ft.Row([ft.Text("Interval (seconds):"), interval_input], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+                ])
+            ]
+        elif category == "debug":
+            def update_show_refresh(e):
+                state.show_refresh_button = e.control.value
+                state.save_settings()
+
+            controls_list = [
+                ft.Text("Debug Settings", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
+                make_settings_tile("UI Options", [
+                    ft.Row([ft.Text("Show Refresh Button:"), ft.Switch(value=state.show_refresh_button, on_change=update_show_refresh)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
                 ])
             ]
         return controls_list
@@ -1478,7 +1577,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
 
     def on_settings_nav_change(e):
         idx = e.control.selected_index
-        categories = ["appearance", "profile", "channels", "run_config", "home_config", "installed"]
+        categories = ["appearance", "profile", "channels", "run_config", "home_config", "installed", "debug"]
         settings_ui_state["selected_category"] = categories[idx]
         update_settings_view()
     
@@ -1497,6 +1596,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
             ft.NavigationRailDestination(icon=ft.Icons.PLAY_CIRCLE_OUTLINED, selected_icon=ft.Icons.PLAY_CIRCLE_FILLED, label="Run Config"),
             ft.NavigationRailDestination(icon=ft.Icons.HOME_OUTLINED, selected_icon=ft.Icons.HOME, label="Home Config"),
             ft.NavigationRailDestination(icon=ft.Icons.APPS_OUTLINED, selected_icon=ft.Icons.APPS, label="Installed"),
+            ft.NavigationRailDestination(icon=ft.Icons.BUG_REPORT_OUTLINED, selected_icon=ft.Icons.BUG_REPORT, label="Debug"),
         ]
     )
     
