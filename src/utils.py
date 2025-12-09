@@ -127,7 +127,7 @@ def execute_nix_search(query, channel):
         print(f"Nix Search Failed: {e}")
         return [{"error": f"Execution Error: {str(e)}"}]
 
-def get_mastodon_quote(account, tag):
+def get_mastodon_feed(account, tag, limit=5):
     clean_account = account.strip()
     clean_tag = tag.strip()
     
@@ -142,31 +142,44 @@ def get_mastodon_quote(account, tag):
         # RSS structure: rss > channel > item
         channel = root.find("channel")
         if channel is None:
-            return None
+            return []
             
-        item = channel.find("item")
-        if item is None:
-            return None
+        items = channel.findall("item")
+        feed_data = []
+        
+        for item in items[:limit]:
+            description_elem = item.find("description")
+            link_elem = item.find("link")
+            pub_date_elem = item.find("pubDate")
             
-        description_elem = item.find("description")
-        link_elem = item.find("link")
-        
-        description = description_elem.text if description_elem is not None else ""
-        link = link_elem.text if link_elem is not None else ""
-        
-        # Clean HTML from description
-        # Replace <br> and <p> with newlines
-        description = re.sub(r'<br\s*/?>|</p>', '\n', description)
-        # Remove all other HTML tags
-        description = re.sub(r'<[^>]+>', '', description)
-        # Trim whitespace
-        description = description.strip()
-        
-        if description:
-            return {"text": description, "link": link, "author": f"@{clean_account}"}
-        else:
-            return None
+            description = description_elem.text if description_elem is not None else ""
+            link = link_elem.text if link_elem is not None else ""
+            pub_date = pub_date_elem.text if pub_date_elem is not None else ""
+            
+            # Clean HTML from description
+            # Replace <br> and <p> with newlines
+            description = re.sub(r'<br\s*/?>|</p>', '\n', description)
+            # Remove all other HTML tags
+            description = re.sub(r'<[^>]+>', '', description)
+            # Trim whitespace
+            description = description.strip()
+            
+            if description:
+                feed_data.append({
+                    "text": description,
+                    "link": link,
+                    "author": f"@{clean_account}",
+                    "date": pub_date
+                })
+                
+        return feed_data
 
     except Exception as e:
-        print(f"Error fetching Mastodon quote: {e}")
-        return None
+        print(f"Error fetching Mastodon feed: {e}")
+        return []
+
+def get_mastodon_quote(account, tag):
+    feed = get_mastodon_feed(account, tag, limit=1)
+    if feed:
+        return feed[0]
+    return None

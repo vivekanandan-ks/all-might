@@ -5,6 +5,7 @@ import os
 APP_NAME = "All Might"
 CONFIG_DIR = os.path.expanduser("~/.config/all-might")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "settings.json")
+TRACKING_FILE = os.path.join(CONFIG_DIR, "installed.json")
 
 # --- Mock Data for Daily Digest ---
 DAILY_APPS = [
@@ -30,13 +31,11 @@ DAILY_QUOTES = [
 ]
 
 DAILY_TIPS = [
-    {"title": "Nix Shell", "code": "nix-shell -p python3"},
-    {"title": "Check Config", "code": "nixos-rebuild test"},
-    {"title": "Search", "code": "nix search nixpkgs#firefox"},
-    {"title": "Garbage Collect", "code": "nix-collect-garbage -d"},
-    {"title": "Flake Update", "code": "nix flake update"},
-    {"title": "Repl", "code": "nix repl"},
-    {"title": "List Generations", "code": "nix-env --list-generations"}
+    {"title": "Tracked Installs", "code": "All-Might remembers what you installed, so you can see details later!"},
+    {"title": "Try without Installing", "code": "Use the 'Run' button to test apps in a temporary shell."},
+    {"title": "Custom Lists", "code": "Save your favorite apps into custom lists for bulk operations."},
+    {"title": "Search Power", "code": "Search results come directly from the official NixOS search backend."},
+    {"title": "Clean Metadata", "code": "All-Might cleans up package names and descriptions for a better UI."}
 ]
 
 DAILY_SONGS = [
