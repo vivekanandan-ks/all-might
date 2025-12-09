@@ -268,44 +268,42 @@ class SongCard(GlassContainer):
 
     def update_card_content(self):
         self.tooltip = self.custom_tooltip
-        
-        align_map = {
-            "left": ft.MainAxisAlignment.START,
-            "right": ft.MainAxisAlignment.END,
-            "center": ft.MainAxisAlignment.CENTER
-        }
-        align = align_map.get(self.cfg.get("align", "center"), ft.MainAxisAlignment.CENTER)
-        
+        self.padding = 15
+        self.image_src = None # We will use a dedicated Image control, not a background
+
+        thumbnail_control = None
         if self.bg_image:
-            self.padding = 0
-            self.image_src = self.bg_image
-            self.image_fit = ft.ImageFit.COVER
-            
-            text_col = ft.Column(
-                alignment=ft.MainAxisAlignment.END,
-                controls=[
-                    ft.Text("Song of the Day", size=10, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD),
-                    ft.Text(self.title_text, size=14, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
-                ]
-            )
-            self.content = ft.Container(
-                gradient=ft.LinearGradient(colors=[ft.Colors.TRANSPARENT, ft.Colors.BLACK], begin=ft.alignment.top_center, end=ft.alignment.bottom_center),
-                padding=15,
-                alignment=ft.alignment.bottom_left,
-                content=text_col
-            )
+            thumbnail_control = ft.Image(src=self.bg_image, width=80, height=80, fit=ft.ImageFit.COVER, border_radius=10)
         else:
-            self.padding = 15
-            self.image_src = None
-            self.content = ft.Column(
-                alignment=ft.MainAxisAlignment.CENTER,
-                controls=[
-                    ft.Row([ft.Text("Song of the Day", size=10, color=ft.Colors.BLACK54, weight=ft.FontWeight.BOLD)], alignment=align),
-                    ft.Row([ft.Icon(ft.Icons.MUSIC_NOTE, size=30, color=ft.Colors.BLACK87)], alignment=align),
-                    ft.Row([ft.Text(self.title_text, size=16, color=ft.Colors.BLACK87, weight=ft.FontWeight.BOLD, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)], alignment=align),
-                    ft.Row([ft.Text(self.artist_text, size=12, color=ft.Colors.BLACK54)], alignment=align)
-                ]
+            thumbnail_control = ft.Container(
+                width=80, height=80,
+                bgcolor=ft.Colors.with_opacity(0.1, state.get_base_color()),
+                border_radius=10,
+                alignment=ft.alignment.center,
+                content=ft.Icon(ft.Icons.MUSIC_NOTE, size=40, color="onSurface")
             )
+
+        text_content = ft.Column(
+            [
+                ft.Text("Song of the Day", size=10, color="onSurfaceVariant", weight=ft.FontWeight.BOLD),
+                ft.Text(self.title_text, size=16, color="onSurface", weight=ft.FontWeight.BOLD, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                ft.Text(self.artist_text, size=12, color="onSurfaceVariant")
+            ],
+            spacing=5,
+            alignment=ft.MainAxisAlignment.CENTER,
+            horizontal_alignment=ft.CrossAxisAlignment.START,
+            expand=True
+        )
+
+        self.content = ft.Row(
+            [
+                thumbnail_control,
+                text_content
+            ],
+            spacing=15,
+            alignment=ft.MainAxisAlignment.START,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER
+        )
         
         if self.page: self.update()
 
