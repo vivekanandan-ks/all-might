@@ -119,6 +119,53 @@ def main(page: ft.Page):
     toast_overlay_container = ft.Container(bottom=90, left=0, right=0, alignment=ft.alignment.center, visible=False)
     current_toast_token = [0]
 
+    custom_dialog_holder = ft.Container(alignment=ft.alignment.center)
+
+    def close_custom_dialog(e=None):
+        custom_dialog_overlay.opacity = 0
+        custom_dialog_overlay.visible = False
+        if custom_dialog_overlay.page:
+            custom_dialog_overlay.update()
+
+    custom_dialog_overlay = ft.Container(
+        content=custom_dialog_holder,
+        expand=True,
+        visible=False,
+        on_click=close_custom_dialog,
+        bgcolor=ft.Colors.with_opacity(0.3, ft.Colors.BLACK),
+        animate_opacity=150,
+        opacity=0,
+    )
+
+    def show_custom_dialog(title, content, actions, dismissible=True):
+        dialog_content = GlassContainer(
+            content=ft.Column(
+                [
+                    ft.Text(title, size=20, weight=ft.FontWeight.BOLD, color="onSurface"),
+                    ft.Divider(height=10),
+                    content,
+                    ft.Divider(height=10),
+                    ft.Row(actions, alignment=ft.MainAxisAlignment.END)
+                ],
+                spacing=10,
+                tight=True,
+            ),
+            width=400,
+            padding=20,
+            border_radius=15,
+            on_click=lambda e: None,
+        )
+        
+        custom_dialog_holder.content = dialog_content
+        custom_dialog_overlay.on_click = close_custom_dialog if dismissible else None
+        custom_dialog_overlay.visible = True
+        custom_dialog_overlay.opacity = 1
+        custom_dialog_overlay.update()
+        return close_custom_dialog
+    
+    controls.show_glass_dialog = show_custom_dialog
+
+
     def show_toast(message):
         current_toast_token[0] += 1
         my_token = current_toast_token[0]
@@ -211,26 +258,31 @@ def main(page: ft.Page):
 
     def show_destructive_dialog(title, content_text, on_confirm):
         duration = state.confirm_timer
+        
         confirm_btn = ft.ElevatedButton(f"Yes ({duration}s)", bgcolor=ft.Colors.GREY_700, color=ft.Colors.WHITE70, disabled=True)
-        cancel_btn = ft.OutlinedButton("No")
-        dlg = ft.AlertDialog(
-            title=ft.Text(title),
-            content=ft.Text(content_text),
-            actions=[confirm_btn, cancel_btn],
-            actions_alignment=ft.MainAxisAlignment.END
-        )
-
-        def close_dlg(e):
-            page.close(dlg)
+        
+        close_dialog_func = [None]
 
         def handle_confirm(e):
-            page.close(dlg)
+            if close_dialog_func[0]:
+                close_dialog_func[0]()
             on_confirm(e)
 
-        cancel_btn.on_click = close_dlg
+        def handle_cancel(e):
+            if close_dialog_func[0]:
+                close_dialog_func[0]()
+
+        cancel_btn = ft.OutlinedButton("No", on_click=handle_cancel)
+        confirm_btn.on_click = handle_confirm
+
+        actions = [cancel_btn, confirm_btn]
+        content = ft.Text(content_text, color="onSurface")
+
+        close_dialog_func[0] = show_custom_dialog(title, content, actions)
+
         def timer_logic():
             for i in range(duration, 0, -1):
-                if not dlg.open: return
+                if not custom_dialog_overlay.visible: return
                 confirm_btn.text = f"Yes ({i}s)"
                 try:
                     confirm_btn.update()
@@ -238,18 +290,16 @@ def main(page: ft.Page):
                     pass
                 time.sleep(1)
 
-            if dlg.open:
+            if custom_dialog_overlay.visible:
                 confirm_btn.text = "Yes"
                 confirm_btn.disabled = False
                 confirm_btn.bgcolor = ft.Colors.RED_700
                 confirm_btn.color = ft.Colors.WHITE
-                confirm_btn.on_click = handle_confirm
                 try:
                     confirm_btn.update()
                 except:
                     pass
-
-        page.open(dlg)
+        
         threading.Thread(target=timer_logic, daemon=True).start()
 
     results_column = ft.Column(spacing=10)
@@ -405,9 +455,22 @@ def main(page: ft.Page):
         cmd_list = shlex.split(display_cmd)
         
         output_text = ft.Text("Launching process...", font_family="monospace", size=12)
-        dlg = ft.AlertDialog(title=ft.Text(f"Launching {title}"), content=ft.Container(width=500, height=150, content=ft.Column([ft.Text(f"Command: {display_cmd}", color=ft.Colors.BLUE_200, size=12, selectable=True), ft.Divider(), ft.Column([output_text], scroll=ft.ScrollMode.AUTO, expand=True)])), actions=[ft.TextButton("Close", on_click=lambda e: page.close(dlg))])
-        page.open(dlg)
-        page.update()
+        
+        content = ft.Container(
+             width=500, height=150, 
+             content=ft.Column([
+                 ft.Text(f"Command: {display_cmd}", color=ft.Colors.BLUE_200, size=12, selectable=True), 
+                 ft.Divider(), 
+                 ft.Column([output_text], scroll=ft.ScrollMode.AUTO, expand=True)
+            ])
+        )
+
+        close_dialog = [None]
+        actions=[ft.TextButton("Close", on_click=lambda e: close_dialog[0]())]
+        
+        close_dialog[0] = show_custom_dialog(f"Launching {title}", content, actions)
+        
+        # We assume show_custom_dialog updates the page to show the dialog.
 
         try:
             # Use pipes to capture output
@@ -426,10 +489,10 @@ def main(page: ft.Page):
                 # Process is still running (good!)
                 output_text.value = "Process started successfully."
             
-            page.update()
+            if output_text.page: output_text.update()
         except Exception as ex:
             output_text.value = f"Error executing command:\n{str(ex)}"
-            page.update()
+            if output_text.page: output_text.update()
 
     def run_cart_shell(e):
         if not state.cart_items: return
@@ -475,29 +538,29 @@ def main(page: ft.Page):
             return
 
         list_name_input = ft.TextField(hint_text="List Name (e.g., dev-tools)", autofocus=True)
-        dlg_ref = [None]
+        
+        close_dialog = [None]
 
         def confirm_save(e):
             name = list_name_input.value.strip()
             if not name:
                 show_toast("Please enter a name")
                 return
+            
             state.save_list(name, list(state.cart_items))
             update_lists_badge()
             show_toast(f"Saved list: {name}")
-            page.close(dlg_ref[0])
-            if active_cart_list_control[0] and active_cart_list_control[0].page: refresh_cart_view(update_ui=True)
+            if close_dialog[0]:
+                close_dialog[0]()
+            if active_cart_list_control[0] and active_cart_list_control[0].page:
+                refresh_cart_view(update_ui=True)
 
-        dlg = ft.AlertDialog(
-            title=ft.Text("Save Cart as List"),
-            content=list_name_input,
-            actions=[
-                ft.TextButton("Cancel", on_click=lambda e: page.close(dlg_ref[0])),
-                ft.TextButton("Save", on_click=confirm_save),
-            ]
-        )
-        dlg_ref[0] = dlg
-        page.open(dlg)
+        actions = [
+            ft.TextButton("Cancel", on_click=lambda e: close_dialog[0]()),
+            ft.TextButton("Save", on_click=confirm_save),
+        ]
+        
+        close_dialog[0] = show_custom_dialog("Save Cart as List", list_name_input, actions)
 
     def clear_all_cart(e):
         if not state.cart_items: return
@@ -620,15 +683,18 @@ def main(page: ft.Page):
                     except Exception as ex:
                         show_toast(f"Bulk install failed: {ex}")
 
-                dlg = ft.AlertDialog(
-                    title=ft.Text("Install All?"),
-                    content=ft.Text(f"Install {len(targets)} packages from {context_name}?"),
-                    actions=[
-                        ft.TextButton("Cancel", on_click=lambda e: page.close(dlg)),
-                        ft.ElevatedButton("Install", on_click=lambda e: [page.close(dlg), do_install()])
-                    ]
-                )
-                page.open(dlg)
+                close_dialog = [None]
+                def install_and_close(e):
+                    if close_dialog[0]:
+                        close_dialog[0]()
+                    do_install()
+
+                actions = [
+                    ft.TextButton("Cancel", on_click=lambda e: close_dialog[0]()),
+                    ft.ElevatedButton("Install", on_click=install_and_close)
+                ]
+                content = ft.Text(f"Install {len(targets)} packages from {context_name}?", color="onSurface")
+                close_dialog[0] = show_custom_dialog("Install All?", content, actions)
 
             return ft.ElevatedButton(
                 f"Install all from {context_name}", 
@@ -669,7 +735,7 @@ def main(page: ft.Page):
             for item in state.cart_items:
                 pkg_data = item['package']
                 saved_channel = item['channel']
-                target_list.controls.append(NixPackageCard(pkg_data, page, saved_channel, on_cart_change=on_global_cart_change, is_cart_view=True, show_toast_callback=show_toast, on_menu_open=None))
+                target_list.controls.append(NixPackageCard(pkg_data, page, saved_channel, on_cart_change=on_global_cart_change, is_cart_view=True, show_toast_callback=show_toast, on_menu_open=None, show_dialog_callback=show_custom_dialog))
 
         if update_ui:
             if cart_header.page: cart_header.update()
@@ -712,7 +778,7 @@ def main(page: ft.Page):
              results_column.controls.append(ft.Container(content=ft.Text("No results found.", color="onSurface", text_align=ft.TextAlign.CENTER), alignment=ft.alignment.center, padding=20))
         else:
             for pkg in filtered_data:
-                results_column.controls.append(NixPackageCard(pkg, page, channel_dropdown.value, on_cart_change=on_global_cart_change, show_toast_callback=show_toast, on_menu_open=None))
+                results_column.controls.append(NixPackageCard(pkg, page, channel_dropdown.value, on_cart_change=on_global_cart_change, show_toast_callback=show_toast, on_menu_open=None, show_dialog_callback=show_custom_dialog))
         if results_column.page: results_column.update()
 
     def perform_search(e):
@@ -887,7 +953,7 @@ def main(page: ft.Page):
             for item in items:
                 pkg_data = item['package']
                 saved_channel = item['channel']
-                list_detail_col.controls.append(NixPackageCard(pkg_data, page, saved_channel, on_cart_change=on_global_cart_change, is_cart_view=True, show_toast_callback=show_toast, on_menu_open=None))
+                list_detail_col.controls.append(NixPackageCard(pkg_data, page, saved_channel, on_cart_change=on_global_cart_change, is_cart_view=True, show_toast_callback=show_toast, on_menu_open=None, show_dialog_callback=show_custom_dialog))
 
         if update_ui and list_detail_col.page: list_detail_col.update()
 
@@ -1073,7 +1139,7 @@ def main(page: ft.Page):
         ft.Container(width=200, height=200, bgcolor="tertiary", border_radius=100, bottom=100, left=-50, blur=ft.Blur(80, 80, ft.BlurTileMode.MIRROR), opacity=0.15)
     ])
 
-    page.add(ft.Stack(expand=True, alignment=ft.alignment.bottom_center, controls=[background, decorations, content_area, nav_bar, global_dismiss_layer, global_menu_card, filter_dismiss_layer, filter_menu, toast_overlay_container]))
+    page.add(ft.Stack(expand=True, alignment=ft.alignment.bottom_center, controls=[background, decorations, content_area, nav_bar, global_dismiss_layer, global_menu_card, filter_dismiss_layer, filter_menu, toast_overlay_container, custom_dialog_overlay]))
 
 if __name__ == "__main__":
     ft.app(target=main)

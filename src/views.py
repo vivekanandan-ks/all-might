@@ -1,6 +1,7 @@
 import flet as ft
 from state import state
 from controls import *
+import controls as controls_mod # Alias to avoid conflict if any, but explicit import is needed
 from constants import *
 from collections import Counter
 import shlex
@@ -308,8 +309,33 @@ class SongCard(GlassContainer):
         if self.page: self.update()
 
     def handle_click(self, e):
-        if self.target_url:
-            self.page.launch_url(self.target_url)
+        if not self.target_url: return
+
+        close_func = [None]
+
+        def copy_link(e):
+            e.page.set_clipboard(self.target_url)
+            if controls_mod.show_toast_global:
+                 controls_mod.show_toast_global("Link copied to clipboard")
+
+        def open_link(e):
+            e.page.launch_url(self.target_url)
+            if close_func[0]: close_func[0]()
+
+        dlg_content = ft.Column([
+            ft.Text("Do you want to open this song link in your browser?", color="onSurface"),
+            ft.Container(height=10),
+            ft.Text(self.target_url, size=12, color="blue", selectable=True, italic=True)
+        ], tight=True)
+
+        actions = [
+            ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=copy_link),
+            ft.TextButton("No", on_click=lambda e: close_func[0]()),
+            ft.TextButton("Yes", on_click=open_link),
+        ]
+
+        if controls_mod.show_glass_dialog:
+             close_func[0] = controls_mod.show_glass_dialog("Open Link?", dlg_content, actions)
 
 def get_home_view():
     state.update_daily_indices()
@@ -337,27 +363,32 @@ def get_home_view():
     def create_dynamic_card_click_handler(link):
         def handler(e):
             if not link: return
+
+            close_dialog = [None]
+
             def copy_link(e):
                 e.page.set_clipboard(link)
-                show_toast("Link copied to clipboard")
+                if controls_mod.show_toast_global:
+                    controls_mod.show_toast_global("Link copied to clipboard")
+
             def open_link(e):
                 e.page.launch_url(link)
-                e.page.close(dlg)
-            dlg = ft.AlertDialog(
-                title=ft.Text("Open Link?"),
-                content=ft.Column([
-                    ft.Text("Do you want to open this Mastodon post in your browser?"),
-                    ft.Container(height=10),
-                    ft.Text(link, size=12, color="blue", selectable=True, italic=True)
-                ], tight=True),
-                actions=[
-                    ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=copy_link),
-                    ft.TextButton("No", on_click=lambda e: e.page.close(dlg)),
-                    ft.TextButton("Yes", on_click=open_link),
-                ],
-                actions_alignment=ft.MainAxisAlignment.END
-            )
-            e.page.open(dlg)
+                if close_dialog[0]:
+                    close_dialog[0]()
+            
+            actions = [
+                ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=copy_link),
+                ft.TextButton("No", on_click=lambda e: close_dialog[0]()),
+                ft.TextButton("Yes", on_click=open_link),
+            ]
+            
+            dlg_content = ft.Column([
+                ft.Text("Do you want to open this Mastodon post in your browser?", color="onSurface"),
+                ft.Container(height=10),
+                ft.Text(link, size=12, color="blue", selectable=True, italic=True)
+            ], tight=True)
+
+            close_dialog[0] = controls_mod.show_glass_dialog("Open Link?", dlg_content, actions)
         return handler
 
     # Build App Card
@@ -571,7 +602,7 @@ def get_home_view():
 
     threading.Thread(target=fetch_fresh_carousel_data, daemon=True).start()
 
-    controls = []
+    view_controls = []
 
     header_row = ft.Row(
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -585,26 +616,26 @@ def get_home_view():
             ft.Container(
                 width=400,
                 content=ft.Column([
-                    ft.Text("App tips 💡", size=12, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"),
+                    ft.Text("App tips", size=12, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"),
                     carousel_widget
                 ])
             )
         ]
     )
-    controls.append(header_row)
+    view_controls.append(header_row)
 
     if cards_row1 or cards_row2:
-        controls.append(ft.Container(height=30))
-        controls.append(ft.Text("Daily Digest", size=18, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"))
-        controls.append(ft.Container(height=10))
+        view_controls.append(ft.Container(height=30))
+        view_controls.append(ft.Text("Daily Digest", size=18, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"))
+        view_controls.append(ft.Container(height=10))
 
         if cards_row1:
-            controls.append(ft.Row(controls=cards_row1, spacing=20, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START))
+            view_controls.append(ft.Row(controls=cards_row1, spacing=20, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START))
         if cards_row2:
-            controls.append(ft.Container(height=40))
-            controls.append(ft.Row(controls=cards_row2, spacing=20, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START))
+            view_controls.append(ft.Container(height=40))
+            view_controls.append(ft.Row(controls=cards_row2, spacing=20, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START))
 
-    controls.append(ft.Container(height=100))
+    view_controls.append(ft.Container(height=100))
 
     return ft.Container(
         expand=True,
@@ -612,7 +643,7 @@ def get_home_view():
         padding=ft.padding.only(top=40, left=30, right=30, bottom=0),
         content=ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.START,
-            controls=controls,
+            controls=view_controls,
             scroll=ft.ScrollMode.AUTO
         )
     )
@@ -1737,9 +1768,21 @@ def _launch_shell_dialog(display_cmd, title, page):
     cmd_list = shlex.split(display_cmd)
     
     output_text = ft.Text("Launching process...", font_family="monospace", size=12)
-    dlg = ft.AlertDialog(title=ft.Text(f"Launching {title}"), content=ft.Container(width=500, height=150, content=ft.Column([ft.Text(f"Command: {display_cmd}", color=ft.Colors.BLUE_200, size=12, selectable=True), ft.Divider(), ft.Column([output_text], scroll=ft.ScrollMode.AUTO, expand=True)])), actions=[ft.TextButton("Close", on_click=lambda e: page.close(dlg))])
-    page.open(dlg)
-    page.update()
+    
+    content = ft.Container(
+        width=500, height=150,
+        content=ft.Column([
+            ft.Text(f"Command: {display_cmd}", color=ft.Colors.BLUE_200, size=12, selectable=True), 
+            ft.Divider(), 
+            ft.Column([output_text], scroll=ft.ScrollMode.AUTO, expand=True)
+        ])
+    )
+    
+    close_func = [None]
+    actions=[ft.TextButton("Close", on_click=lambda e: close_func[0]())]
+
+    if controls_mod.show_glass_dialog:
+            close_func[0] = controls_mod.show_glass_dialog(f"Launching {title}", content, actions)
 
     try:
         # Use pipes to capture output

@@ -13,7 +13,7 @@ global_open_menu_func = None
 # --- Custom Controls ---
 
 class GlassContainer(ft.Container):
-    def __init__(self, content, opacity=0.1, blur_sigma=10, border_radius=None, **kwargs):
+    def __init__(self, content, opacity=0.1, blur_sigma=15, border_radius=None, **kwargs):
         bg_color = kwargs.pop("bgcolor", None)
         if bg_color is None:
              base = state.get_base_color()
@@ -93,7 +93,8 @@ class UndoToast(ft.Container):
         )
         super().__init__(
             content=content,
-            bgcolor=ft.Colors.with_opacity(0.95, "#1a202c"),
+            bgcolor=ft.Colors.with_opacity(0.15, "#1a202c"),
+            blur=ft.Blur(15, 15, ft.BlurTileMode.MIRROR),
             padding=ft.padding.symmetric(horizontal=20, vertical=12),
             border_radius=30,
             shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.with_opacity(0.5, ft.Colors.BLACK), offset=ft.Offset(0, 5)),
@@ -176,7 +177,8 @@ class DelayedActionToast(ft.Container):
         )
         super().__init__(
             content=content,
-            bgcolor=ft.Colors.with_opacity(0.95, "#742a2a"), # Reddish tint for destructive delay
+            bgcolor=ft.Colors.with_opacity(0.15, "#742a2a"), # Reddish tint for destructive delay
+            blur=ft.Blur(15, 15, ft.BlurTileMode.MIRROR),
             padding=ft.padding.symmetric(horizontal=20, vertical=12),
             border_radius=30,
             shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.with_opacity(0.5, ft.Colors.BLACK), offset=ft.Offset(0, 5)),
@@ -349,12 +351,13 @@ show_undo_toast_global = None
 show_delayed_toast_global = None
 
 class NixPackageCard(GlassContainer):
-    def __init__(self, package_data, page_ref, initial_channel, on_cart_change=None, is_cart_view=False, show_toast_callback=None, on_menu_open=None, on_install_change=None):
+    def __init__(self, package_data, page_ref, initial_channel, on_cart_change=None, is_cart_view=False, show_toast_callback=None, on_menu_open=None, on_install_change=None, show_dialog_callback=None):
         self.pkg = package_data
         self.page_ref = page_ref
         self.on_cart_change = on_cart_change
         self.is_cart_view = is_cart_view
         self.show_toast = show_toast_callback
+        self.show_dialog = show_dialog_callback
         self.on_menu_open = on_menu_open
         self.on_install_change = on_install_change
         self.selected_channel = initial_channel
@@ -684,23 +687,27 @@ class NixPackageCard(GlassContainer):
 
     def handle_install_request(self, e):
         # Confirmation Dialog (Simple)
+        close_func = [None]
+        
         def confirm_install(e):
-            self.page_ref.close(dlg)
+            if close_func[0]: close_func[0]()
             self.run_install_logic()
 
         def close_dlg(e):
-            self.page_ref.close(dlg)
+            if close_func[0]: close_func[0]()
 
-        dlg = ft.AlertDialog(
-            title=ft.Text("Install App?"),
-            content=ft.Text(f"Install {self.pname} using 'nix profile add'?"),
-            actions=[
-                ft.TextButton("Cancel", on_click=close_dlg),
-                ft.ElevatedButton("Install", bgcolor=ft.Colors.GREEN_600, color=ft.Colors.WHITE, on_click=confirm_install)
-            ],
-            actions_alignment=ft.MainAxisAlignment.END
-        )
-        self.page_ref.open(dlg)
+        actions = [
+            ft.TextButton("Cancel", on_click=close_dlg),
+            ft.ElevatedButton("Install", bgcolor=ft.Colors.GREEN_600, color=ft.Colors.WHITE, on_click=confirm_install)
+        ]
+        
+        content = ft.Text(f"Install {self.pname} using 'nix profile add'?", color="onSurface")
+        
+        if self.show_dialog:
+             close_func[0] = self.show_dialog("Install App?", content, actions)
+        else:
+             # Fallback if no show_dialog (should not happen)
+             pass
 
     def run_install_logic(self):
         # Command: nix profile add nixpkgs/channel#pname
@@ -709,13 +716,14 @@ class NixPackageCard(GlassContainer):
         
         # Output Dialog
         output_column = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
-        output_dlg = ft.AlertDialog(
-            title=ft.Text(f"Installing {self.pname}..."),
-            content=ft.Container(width=600, height=300, content=output_column),
-            actions=[], # No actions while running
-            modal=True
-        )
-        self.page_ref.open(output_dlg)
+        content_container = ft.Container(width=600, height=300, content=output_column)
+        
+        close_func = [None]
+        close_btn = ft.TextButton("Close", on_click=lambda e: close_func[0](), visible=False)
+        
+        if self.show_dialog:
+             close_func[0] = self.show_dialog(f"Installing {self.pname}...", content_container, [close_btn], dismissible=False)
+        
         self.page_ref.update()
 
         def run():
@@ -730,7 +738,7 @@ class NixPackageCard(GlassContainer):
                 
                 for line in process.stdout:
                     output_column.controls.append(ft.Text(line.strip(), font_family="monospace", size=12))
-                    output_dlg.update()
+                    if output_column.page: output_column.update()
                 
                 process.wait()
                 
@@ -759,11 +767,11 @@ class NixPackageCard(GlassContainer):
                     self.installed_version = state.get_installed_version(self.pname)
                     
                     self.channel_dropdown.items = self.build_channel_menu_items()
-                    self.channel_dropdown.update()
+                    if self.channel_dropdown.page: self.channel_dropdown.update()
 
                     self.install_btn.visible = False
                     self.uninstall_btn.visible = True
-                    self.update()
+                    if self.page_ref: self.update()
                     if self.on_cart_change: self.on_cart_change()
                     if self.on_install_change: self.on_install_change()
                 else:
@@ -772,10 +780,10 @@ class NixPackageCard(GlassContainer):
             except Exception as ex:
                 output_column.controls.append(ft.Text(f"Error: {ex}", color="red"))
             
-            # Add close button
-            output_dlg.actions.append(ft.TextButton("Close", on_click=lambda e: self.page_ref.close(output_dlg)))
-            output_dlg.modal = False
-            output_dlg.update()
+            # Show close button
+            close_btn.visible = True
+            if close_btn.page: close_btn.update()
+            if output_column.page: output_column.update()
 
         threading.Thread(target=run, daemon=True).start()
 
@@ -816,33 +824,30 @@ class NixPackageCard(GlassContainer):
             except Exception as ex:
                 if self.show_toast: self.show_toast(f"Uninstall failed: {ex}")
 
-        def confirm_action(e):
-             if show_delayed_toast_global:
-                 show_delayed_toast_global(f"Uninstalling {self.pname}...", do_uninstall)
-        
         duration = state.confirm_timer
         confirm_btn = ft.ElevatedButton(f"Yes ({duration}s)", bgcolor=ft.Colors.GREY_700, color=ft.Colors.WHITE70, disabled=True)
         cancel_btn = ft.OutlinedButton("No")
-        dlg = ft.AlertDialog(
-            title=ft.Text("Uninstall App?"),
-            content=ft.Text(f"Are you sure you want to uninstall {self.pname}?"),
-            actions=[confirm_btn, cancel_btn],
-            actions_alignment=ft.MainAxisAlignment.END
-        )
-
+        
+        close_func = [None]
+        
         def close_dlg(e):
-            self.page_ref.close(dlg)
+            if close_func[0]: close_func[0]()
 
         def handle_confirm(e):
-            self.page_ref.close(dlg)
+            if close_func[0]: close_func[0]()
             if show_delayed_toast_global:
                  show_delayed_toast_global(f"Uninstalling {self.pname}...", do_uninstall)
 
         cancel_btn.on_click = close_dlg
         
+        content = ft.Text(f"Are you sure you want to uninstall {self.pname}?", color="onSurface")
+        
+        if self.show_dialog:
+             close_func[0] = self.show_dialog("Uninstall App?", content, [cancel_btn, confirm_btn])
+        
         def timer_logic():
             for i in range(duration, 0, -1):
-                if not dlg.open: return
+                if not confirm_btn.page: return
                 confirm_btn.text = f"Yes ({i}s)"
                 try:
                     confirm_btn.update()
@@ -850,7 +855,7 @@ class NixPackageCard(GlassContainer):
                     pass
                 time.sleep(1)
 
-            if dlg.open:
+            if confirm_btn.page:
                 confirm_btn.text = "Yes"
                 confirm_btn.disabled = False
                 confirm_btn.bgcolor = ft.Colors.RED_700
@@ -861,7 +866,6 @@ class NixPackageCard(GlassContainer):
                 except:
                     pass
 
-        self.page_ref.open(dlg)
         threading.Thread(target=timer_logic, daemon=True).start()
 
     def refresh_lists_state(self):
@@ -1054,12 +1058,14 @@ class NixPackageCard(GlassContainer):
         content_controls.append(ft.Divider())
         content_controls.append(ft.Column([output_text], scroll=ft.ScrollMode.AUTO, expand=True))
 
-        dlg = ft.AlertDialog(
-            title=ft.Text(f"Launching: {self.run_mode.capitalize()}"),
-            content=ft.Container(width=500, height=150, content=ft.Column(content_controls)),
-            actions=[ft.TextButton("Close", on_click=lambda e: self.page_ref.close(dlg))]
-        )
-        self.page_ref.open(dlg)
+        content_container = ft.Container(width=500, height=150, content=ft.Column(content_controls))
+
+        close_func = [None]
+        actions = [ft.TextButton("Close", on_click=lambda e: close_func[0]())]
+        
+        if self.show_dialog:
+             close_func[0] = self.show_dialog(f"Launching: {self.run_mode.capitalize()}", content_container, actions)
+
         self.page_ref.update()
 
         try:
@@ -1079,7 +1085,7 @@ class NixPackageCard(GlassContainer):
                 # Process is still running (good!)
                 output_text.value = "Process started successfully."
             
-            self.page_ref.update()
+            if self.page_ref: self.page_ref.update()
         except Exception as ex:
             output_text.value = f"Error executing command:\n{str(ex)}"
-            self.page_ref.update()
+            if self.page_ref: self.page_ref.update()
