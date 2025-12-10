@@ -31,11 +31,11 @@ DAILY_QUOTES = [
 ]
 
 DAILY_TIPS = [
-    {"title": "Tracked Installs", "code": "All-Might remembers what you installed, so you can see details later!"},
-    {"title": "Try without Installing", "code": "Use the 'Run' button to test apps in a temporary shell."},
-    {"title": "Custom Lists", "code": "Save your favorite apps into custom lists for bulk operations."},
-    {"title": "Search Power", "code": "Search results come directly from the official NixOS search backend."},
-    {"title": "Clean Metadata", "code": "All-Might cleans up package names and descriptions for a better UI."}
+    {"title": "Reproducibility", "code": "Nix ensures that packages work the same way on every machine, solving 'works on my machine' issues."},
+    {"title": "Atomic Upgrades", "code": "Upgrades and rollbacks are atomic. If an upgrade fails, you can always roll back to the previous state."},
+    {"title": "Nix Shell", "code": "Use 'nix-shell -p package' to use a tool temporarily without installing it into your user profile."},
+    {"title": "Garbage Collection", "code": "Run 'nix-collect-garbage' to free up disk space by removing unused packages from the Nix store."},
+    {"title": "Declarative Config", "code": "NixOS allows you to define your entire system configuration in a single file (configuration.nix)."}
 ]
 
 DAILY_SONGS = [

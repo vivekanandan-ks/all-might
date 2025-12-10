@@ -11,13 +11,14 @@ import datetime
 from utils import get_mastodon_quote, get_mastodon_feed, fetch_opengraph_data
 
 def get_search_view(perform_search, channel_dropdown, search_field, search_icon_btn, results_column, result_count_text, filter_badge_container, toggle_filter_menu, refresh_callback=None):
-    channel_dropdown.border_radius = state.get_radius('selector')
+    # channel_dropdown is now a GlassContainer pre-styled in main.py
     
     header_controls = [
         channel_dropdown,
-        ft.Container(
+        GlassContainer(
             content=ft.Row([search_field, search_icon_btn], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=0),
-            bgcolor="surfaceVariant",
+            opacity=0.1,
+            blur_sigma=15,
             border_radius=state.get_radius('search'),
             padding=ft.padding.only(left=15, right=5),
             expand=True
@@ -94,7 +95,8 @@ def get_lists_view(selected_list_name, is_viewing_favourites, refresh_list_detai
                 padding=ft.padding.symmetric(horizontal=12, vertical=8),
                 content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text(btn_text, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)]),
                 on_click=run_list_shell,
-                bgcolor=ft.Colors.BLUE_600,
+                bgcolor=ft.Colors.with_opacity(0.4, ft.Colors.BLUE_600),
+                blur=ft.Blur(15, 15, ft.BlurTileMode.MIRROR),
                 border_radius=state.get_radius('button'),
                 ink=True,
                 tooltip=tooltip_cmd
@@ -240,14 +242,16 @@ class SongCard(GlassContainer):
             # Else remains Loading...
 
     def did_mount(self):
-        if not state.song_use_mastodon and not state.default_song_cache:
-            threading.Thread(target=self.fetch_default_meta, daemon=True).start()
-        elif state.song_use_mastodon and not state.song_mastodon_cache:
+        # Always fetch fresh data on mount (app launch/refresh) to ensure latest link
+        if state.song_use_mastodon:
             threading.Thread(target=self.fetch_mastodon_meta, daemon=True).start()
+        else:
+            threading.Thread(target=self.fetch_default_meta, daemon=True).start()
 
     def fetch_default_meta(self):
         data = fetch_opengraph_data(self.default_url)
         if data:
+            data['fetched_at'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             state.default_song_cache = data
             state.save_settings()
             self.title_text = data.get("title", "Song of the Day")
@@ -258,6 +262,7 @@ class SongCard(GlassContainer):
     def fetch_mastodon_meta(self):
         fetched = get_mastodon_quote(state.song_mastodon_account, state.song_mastodon_tag)
         if fetched:
+            fetched['fetched_at'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             state.song_mastodon_cache = fetched
             state.last_fetched_song = fetched
             state.save_settings()
@@ -322,16 +327,66 @@ class SongCard(GlassContainer):
             e.page.launch_url(self.target_url)
             if close_func[0]: close_func[0]()
 
+        def refresh_meta(e):
+            if close_func[0]: close_func[0]()
+            if controls_mod.show_toast_global:
+                controls_mod.show_toast_global("Refetching song data...")
+            
+            def run_fetch():
+                if state.song_use_mastodon:
+                     fetched = get_mastodon_quote(state.song_mastodon_account, state.song_mastodon_tag)
+                     if fetched and fetched.get("text"):
+                        fetched['fetched_at'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        state.song_mastodon_cache = fetched
+                        state.last_fetched_song = fetched
+                        state.save_settings()
+                        self.title_text = fetched.get("text", "...").split("\n")[0]
+                        self.artist_text = fetched.get("author", "")
+                        self.target_url = fetched.get("link", "")
+                        if controls_mod.show_toast_global:
+                            controls_mod.show_toast_global("Song data refreshed")
+                     else:
+                        if controls_mod.show_toast_global:
+                            controls_mod.show_toast_global("Refetch failed, keeping old data")
+                else:
+                     data = fetch_opengraph_data(self.default_url)
+                     if data and data.get("title"):
+                        data['fetched_at'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        state.default_song_cache = data
+                        state.save_settings()
+                        self.title_text = data.get("title", "Song of the Day")
+                        self.artist_text = "All-Might Pick"
+                        self.bg_image = data.get("image")
+                        if controls_mod.show_toast_global:
+                            controls_mod.show_toast_global("Song data refreshed")
+                     else:
+                        if controls_mod.show_toast_global:
+                            controls_mod.show_toast_global("Refetch failed, keeping old data")
+                
+                self.update_card_content()
+
+            threading.Thread(target=run_fetch, daemon=True).start()
+
+        # Get fetched time
+        fetched_at = "Unknown"
+        if state.song_use_mastodon and state.song_mastodon_cache:
+            fetched_at = state.song_mastodon_cache.get('fetched_at', 'Unknown')
+        elif not state.song_use_mastodon and state.default_song_cache:
+            fetched_at = state.default_song_cache.get('fetched_at', 'Unknown')
+
         dlg_content = ft.Column([
             ft.Text("Do you want to open this song link in your browser?", color="onSurface"),
             ft.Container(height=10),
-            ft.Text(self.target_url, size=12, color="blue", selectable=True, italic=True)
+            ft.Text(self.target_url, size=12, color="blue", selectable=True, italic=True),
+            ft.Container(height=5),
+            ft.Text(f"Cached: {fetched_at}", size=10, color="onSurfaceVariant", italic=True)
         ], tight=True)
 
         actions = [
+            ft.IconButton(ft.Icons.REFRESH, tooltip="Refresh Metadata", on_click=refresh_meta),
             ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=copy_link),
             ft.TextButton("No", on_click=lambda e: close_func[0]()),
-            ft.TextButton("Yes", on_click=open_link),
+            ft.ElevatedButton("Yes", on_click=open_link, bgcolor=ft.Colors.GREEN, color=ft.Colors.WHITE, icon=ft.Icons.CHECK),
         ]
 
         if controls_mod.show_glass_dialog:
@@ -379,7 +434,7 @@ def get_home_view():
             actions = [
                 ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=copy_link),
                 ft.TextButton("No", on_click=lambda e: close_dialog[0]()),
-                ft.TextButton("Yes", on_click=open_link),
+                ft.ElevatedButton("Yes", on_click=open_link, bgcolor=ft.Colors.GREEN, color=ft.Colors.WHITE, icon=ft.Icons.CHECK),
             ]
             
             dlg_content = ft.Column([

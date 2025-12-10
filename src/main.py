@@ -25,22 +25,16 @@ def main(page: ft.Page):
     active_filters = {"No package set"} # Default filter
     pending_filters = set()
 
-    global_menu_card = ft.Container(
+    global_menu_card = GlassContainer(
         visible=False,
-        bgcolor="#252525",
-        border_radius=12,
-        padding=10,
         width=200,
+        padding=10,
         top=0, left=0,
-        border=ft.border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE)),
-        shadow=ft.BoxShadow(
-            spread_radius=1, blur_radius=10,
-            color=ft.Colors.with_opacity(0.5, ft.Colors.BLACK), offset=ft.Offset(0, 5)
-        ),
+        border=ft.border.all(1, "outline"),
         content=ft.Column(spacing=5, tight=True, scroll=ft.ScrollMode.AUTO),
         animate_opacity=150,
-        opacity=0
     )
+    global_menu_card.opacity = 0
 
     global_dismiss_layer = ft.Container(
         expand=True,
@@ -55,26 +49,65 @@ def main(page: ft.Page):
         global_dismiss_layer.visible = False
         page.update()
 
-    def open_global_menu(e, pkg, channel, refresh_callback):
-        menu_x = e.global_x - 180
-        menu_y = e.global_y + 10
+    def show_glass_menu(e, content_controls, width=200):
+        # Fallback if global_x not present (e.g. some events might differ)
+        gx = getattr(e, "global_x", page.window_width / 2)
+        gy = getattr(e, "global_y", page.window_height / 2)
+        
+        # Consistent logic:
+        # If click is on the far right (e.g. > window_width - width), shift left.
+        # Otherwise, try to align left edge to gx.
+        
+        # Offset slightly to not cover the button completely if possible, or align nicely below.
+        # Standard dropdown behavior: Top-Left corner at (gx, gy) usually.
+        # But we want to avoid going off screen.
+        
+        menu_x = gx
+        if menu_x + width > page.window_width - 10:
+            menu_x = gx - width
+            
+        # Ensure it doesn't go off-screen left
         if menu_x < 10: menu_x = 10
-        if menu_y + 200 > page.height: menu_y = page.height - 210
+        
+        # Vertical positioning
+        # Default to below the click
+        menu_y = gy + 10
+        
+        # Calculate menu height to check bottom overflow
+        calc_h = (len(content_controls) * 45) + 20
+        menu_height = min(300, calc_h)
+        
+        if menu_y + menu_height > page.window_height - 10:
+             # If it overflows bottom, try opening above
+             menu_y = gy - menu_height - 10
+             # If that overflows top, clamp to screen
+             if menu_y < 10: menu_y = 10
+        
+        global_menu_card.width = width
         global_menu_card.left = menu_x
         global_menu_card.top = menu_y
+        
+        global_menu_card.content.controls = content_controls
+        
+        global_menu_card.height = menu_height
 
-        content_col = global_menu_card.content
-        content_col.controls.clear()
+        global_dismiss_layer.visible = True
+        global_menu_card.visible = True
+        global_menu_card.opacity = 1
+        global_menu_card.update()
+        if global_dismiss_layer.page: global_dismiss_layer.update()
+
+    def open_add_to_list_menu(e, pkg, channel, refresh_callback):
+        content_controls = []
 
         if not state.saved_lists:
-            content_col.controls.append(
+            content_controls.append(
                 ft.Container(
                     content=ft.Text("No lists created yet.\nCreate one in Cart.", size=12, color=ft.Colors.GREY_400, text_align=ft.TextAlign.CENTER),
                     padding=10,
                     alignment=ft.alignment.center
                 )
             )
-            global_menu_card.height = 60
         else:
             containing_lists = state.get_containing_lists(pkg, channel)
             sorted_lists = sorted(state.saved_lists.keys(), key=str.lower)
@@ -102,19 +135,14 @@ def main(page: ft.Page):
                         }
                     )
                 )
-                content_col.controls.append(row)
-
-            calculated_height = (len(sorted_lists) * 45) + 20
-            global_menu_card.height = min(300, calculated_height)
-
-        global_dismiss_layer.visible = True
-        global_menu_card.visible = True
-        global_menu_card.opacity = 1
-        page.update()
+                content_controls.append(row)
+        
+        show_glass_menu(e, content_controls)
 
     global global_open_menu_func
-    global_open_menu_func = open_global_menu
-    controls.global_open_menu_func = open_global_menu
+    global_open_menu_func = open_add_to_list_menu
+    controls.global_open_menu_func = open_add_to_list_menu
+    controls.show_glass_menu_global = show_glass_menu
 
     toast_overlay_container = ft.Container(bottom=90, left=0, right=0, alignment=ft.alignment.center, visible=False)
     current_toast_token = [0]
@@ -153,10 +181,9 @@ def main(page: ft.Page):
             width=400,
             padding=20,
             border_radius=15,
-            on_click=lambda e: None,
         )
         
-        custom_dialog_holder.content = dialog_content
+        custom_dialog_holder.content = ft.GestureDetector(on_tap=lambda e: None, content=dialog_content)
         custom_dialog_overlay.on_click = close_custom_dialog if dismissible else None
         custom_dialog_overlay.visible = True
         custom_dialog_overlay.opacity = 1
@@ -170,16 +197,21 @@ def main(page: ft.Page):
         current_toast_token[0] += 1
         my_token = current_toast_token[0]
         t_text = ft.Text(message, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD)
-        t_container = ft.Container(
+        
+        # Use GlassContainer logic manually or use the class if available.
+        # Since this is inside main, we can use GlassContainer from controls import.
+        t_container = GlassContainer(
             content=t_text,
-            bgcolor=ft.Colors.with_opacity(0.9, "#2D3748"),
+            bgcolor=ft.Colors.with_opacity(0.15, "#2D3748"),
             padding=ft.padding.symmetric(horizontal=16, vertical=10),
             border_radius=25,
-            shadow=ft.BoxShadow(blur_radius=10, color=ft.Colors.with_opacity(0.3, ft.Colors.BLACK), offset=ft.Offset(0, 5)),
             opacity=0,
             animate_opacity=300,
             alignment=ft.alignment.center,
         )
+        # GlassContainer sets shadow and blur by default.
+        # We might want to override shadow if needed, but default is fine.
+        
         toast_overlay_container.content = t_container
         toast_overlay_container.visible = True
         page.update()
@@ -307,7 +339,7 @@ def main(page: ft.Page):
     active_cart_list_control = [None]
     
     cart_header_title = ft.Text("Your Cart (0 items)", size=24, weight=ft.FontWeight.W_900, color="onSurface")
-    cart_header_save_btn = ft.ElevatedButton("Save cart as list", icon=ft.Icons.ADD, bgcolor=ft.Colors.TEAL_700, color=ft.Colors.WHITE)
+    cart_header_save_btn = GlassButton(text="Save cart as list", icon=ft.Icons.ADD, base_color=ft.Colors.TEAL_700, opacity=0.8)
     cart_header_clear_btn = ft.IconButton(ft.Icons.CLEANING_SERVICES, tooltip="Clear Cart", icon_color=ft.Colors.RED_400)
     cart_header_shell_btn_container = ft.Container(
         padding=ft.padding.symmetric(horizontal=12, vertical=8),
@@ -316,7 +348,9 @@ def main(page: ft.Page):
     )
     cart_header_copy_btn = ft.IconButton(ft.Icons.CONTENT_COPY, icon_color=ft.Colors.WHITE70, tooltip="Copy Command", icon_size=16, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=0)))
     cart_header_shell_btn = ft.Container(
-        bgcolor=ft.Colors.BLUE_600, border_radius=8,
+        bgcolor=ft.Colors.with_opacity(0.4, ft.Colors.BLUE_600),
+        blur=ft.Blur(15, 15, ft.BlurTileMode.MIRROR),
+        border_radius=8,
         content=ft.Row(spacing=0, controls=[
             cart_header_shell_btn_container,
             ft.Container(width=1, height=20, bgcolor=ft.Colors.WHITE24),
@@ -366,12 +400,75 @@ def main(page: ft.Page):
     )
 
     result_count_text = ft.Text("", size=12, color="onSurfaceVariant", visible=False)
-    channel_dropdown = ft.Dropdown(
-        width=160, text_size=12, border_color=ft.Colors.TRANSPARENT, bgcolor="surfaceVariant",
-        value=state.default_channel if state.default_channel in state.active_channels else (state.active_channels[0] if state.active_channels else ""),
-        options=[ft.dropdown.Option(c) for c in state.active_channels],
-        content_padding=10, filled=True,
+    
+    # Custom Glass Channel Dropdown
+    default_ch = state.default_channel if state.default_channel in state.active_channels else (state.active_channels[0] if state.active_channels else "")
+    channel_text = ft.Text(default_ch, size=12)
+    
+    def open_channel_menu(e):
+        content_controls = []
+        for ch in state.active_channels:
+            def on_select(e, c=ch):
+                channel_text.value = c
+                channel_text.update()
+                # We need to update the value on the container wrapper? 
+                # channel_dropdown_container.data = c ? 
+                # channel_dropdown.value was used before.
+                # Let's attach value to channel_text or a dedicated state var?
+                # refresh_dropdown_options writes to channel_dropdown.value
+                channel_dropdown_container.data = c 
+                close_global_menu()
+            
+            row = ft.Container(
+                content=ft.Text(ch, size=12),
+                padding=10,
+                border_radius=5,
+                ink=True,
+                on_click=on_select
+            )
+            content_controls.append(row)
+        
+        # Calculate alignment
+        # Align to container Top-Left
+        # e is from GestureDetector (TapEvent)
+        # e.global_x/y is click position. e.local_x/y is click relative to container.
+        # Container Top-Left Global = e.global_x - e.local_x
+        # Container Height approx 40 (12px text + 8*2 padding = 28 + icon... roughly 40)
+        
+        # We construct a dummy event-like object to pass to show_glass_menu
+        # so it uses our calculated coordinates.
+        class PosEvent:
+            pass
+        
+        pe = PosEvent()
+        # Align X to container left
+        pe.global_x = e.global_x - e.local_x
+        # Align Y to container bottom (approx)
+        pe.global_y = (e.global_y - e.local_y) + 35 
+        
+        show_glass_menu(pe, content_controls, width=160)
+
+    # Inner Visual
+    channel_dropdown_visual = GlassContainer(
+        width=160, padding=ft.padding.symmetric(horizontal=10, vertical=8),
+        content=ft.Row([channel_text, ft.Icon(ft.Icons.ARROW_DROP_DOWN, size=18)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+        border_radius=state.get_radius('selector'),
+        bgcolor=ft.Colors.with_opacity(0.1, state.get_base_color()),
     )
+    
+    # Wrapper for Click
+    channel_dropdown_container = ft.GestureDetector(
+        content=channel_dropdown_visual,
+        on_tap_up=open_channel_menu
+    )
+    channel_dropdown_container.value = default_ch # Backwards compatibility for read
+    # We assign .value to the wrapper so search logic can read it.
+    # Note: GestureDetector doesn't natively have .value, but Python allows dynamic attrs.
+    
+    # Update logic also needs to be compatible.
+    # The 'channel_dropdown' variable now refers to the GestureDetector wrapper.
+    channel_dropdown = channel_dropdown_container
+
     search_field = ft.TextField(
         hint_text="Search packages...", border=ft.InputBorder.NONE,
         hint_style=ft.TextStyle(color="onSurfaceVariant"), text_style=ft.TextStyle(color="onSurface"), expand=True,
@@ -615,41 +712,46 @@ def main(page: ft.Page):
         
         if all_installed:
             # Uninstall Mode
-            # Re-calculate keys for ALL items for bulk uninstall (even if we just calculated, we need keys for all items in the list, which implies they are all installed)
-            # The loop above adds to installed_keys if is_package_installed is true.
-            # If all_installed is True, installed_keys contains keys for all items (that have keys).
-            
-            targets = installed_keys
+            # User request: Use full flake path "nixpkgs/channel#pname" instead of element key
+            targets = []
+            for item in items:
+                pkg = item['package']
+                channel = item['channel']
+                pname = pkg.get("package_pname", "Unknown")
+                targets.append(f"nixpkgs/{channel}#{pname}")
+
             if not targets:
-                 # Should not happen if all_installed is true and cache is valid
                  return ft.Container()
 
             cmd = f"nix profile remove {' '.join(targets)}"
             
             def run_uninstall_all(e):
-                def do_uninstall():
-                    show_toast(f"Uninstalling {len(targets)} packages...")
-                    try:
-                        subprocess.run(shlex.split(cmd), check=True)
-                        # Untrack
-                        for item in items:
-                            p = item['package'].get("package_pname")
-                            c = item['channel']
-                            state.untrack_install(p, c)
-                        
-                        state.refresh_installed_cache()
-                        show_toast("Bulk uninstall successful")
-                        if refresh_cb: refresh_cb()
-                    except Exception as ex:
-                        show_toast(f"Bulk uninstall failed: {ex}")
+                def do_uninstall(e):
+                    def actual_execution():
+                        show_toast(f"Uninstalling {len(targets)} packages...")
+                        try:
+                            subprocess.run(shlex.split(cmd), check=True)
+                            # Untrack
+                            for item in items:
+                                p = item['package'].get("package_pname")
+                                c = item['channel']
+                                state.untrack_install(p, c)
+                            
+                            state.refresh_installed_cache()
+                            if refresh_cb: refresh_cb()
+                            show_toast("Bulk uninstall successful")
+                        except Exception as ex:
+                            show_toast(f"Bulk uninstall failed: {ex}")
 
-                show_delayed_toast(f"Uninstalling {len(targets)} apps...", do_uninstall)
+                    show_delayed_toast(f"Uninstalling {len(targets)} apps...", actual_execution)
 
-            return ft.OutlinedButton(
-                f"Uninstall all from {context_name}", 
+                show_destructive_dialog(f"Uninstall all from {context_name}?", f"Are you sure you want to remove {len(targets)} apps?", do_uninstall)
+
+            return GlassButton(
+                text=f"Uninstall all from {context_name}",
                 icon=ft.Icons.DELETE_SWEEP, 
-                icon_color="red",
-                style=ft.ButtonStyle(color="red", side=ft.BorderSide(1, "red")),
+                base_color=ft.Colors.RED,
+                opacity=0.2,
                 tooltip=cmd,
                 on_click=run_uninstall_all
             )
@@ -696,10 +798,11 @@ def main(page: ft.Page):
                 content = ft.Text(f"Install {len(targets)} packages from {context_name}?", color="onSurface")
                 close_dialog[0] = show_custom_dialog("Install All?", content, actions)
 
-            return ft.ElevatedButton(
-                f"Install all from {context_name}", 
+            return GlassButton(
+                text=f"Install all from {context_name}", 
                 icon=ft.Icons.DOWNLOAD_FOR_OFFLINE, 
-                bgcolor="green", color="white",
+                base_color=ft.Colors.GREEN,
+                opacity=0.6,
                 tooltip=cmd,
                 on_click=run_install_all
             )
@@ -743,10 +846,18 @@ def main(page: ft.Page):
 
 
     def refresh_dropdown_options():
-        channel_dropdown.options = [ft.dropdown.Option(c) for c in state.active_channels]
-        if state.default_channel in state.active_channels: channel_dropdown.value = state.default_channel
-        elif state.active_channels: channel_dropdown.value = state.active_channels[0]
+        if state.default_channel in state.active_channels:
+             new_val = state.default_channel
+        elif state.active_channels:
+             new_val = state.active_channels[0]
+        else:
+             new_val = ""
+             
+        channel_dropdown.value = new_val # Keep .value for read
+        channel_dropdown.data = new_val # Sync .data
+        channel_text.value = new_val
         if channel_dropdown.page: channel_dropdown.update()
+        if channel_text.page: channel_text.update()
 
     def update_results_list():
         results_column.controls.clear()
@@ -777,8 +888,10 @@ def main(page: ft.Page):
         if not filtered_data:
              results_column.controls.append(ft.Container(content=ft.Text("No results found.", color="onSurface", text_align=ft.TextAlign.CENTER), alignment=ft.alignment.center, padding=20))
         else:
+            # Use .data if set, else .value fallback
+            current_ch = getattr(channel_dropdown, "data", channel_dropdown.value)
             for pkg in filtered_data:
-                results_column.controls.append(NixPackageCard(pkg, page, channel_dropdown.value, on_cart_change=on_global_cart_change, show_toast_callback=show_toast, on_menu_open=None, show_dialog_callback=show_custom_dialog))
+                results_column.controls.append(NixPackageCard(pkg, page, current_ch, on_cart_change=on_global_cart_change, show_toast_callback=show_toast, on_menu_open=None, show_dialog_callback=show_custom_dialog))
         if results_column.page: results_column.update()
 
     def perform_search(e):
@@ -787,7 +900,7 @@ def main(page: ft.Page):
             results_column.update()
         if filter_menu.visible: toggle_filter_menu(False)
         query = search_field.value
-        current_channel = channel_dropdown.value
+        current_channel = getattr(channel_dropdown, "data", channel_dropdown.value)
         active_filters.clear()
         active_filters.add("No package set")
         nonlocal current_results
