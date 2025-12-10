@@ -234,6 +234,9 @@ class AppState:
                             if k not in saved_card_config:
                                 saved_card_config[k] = v
                             else:
+                                # Ensure 'h' and 'color' keys exist, using defaults if not
+                                if 'h' not in saved_card_config[k]:
+                                    saved_card_config[k]['h'] = v.get('h', 180)
                                 if "color" not in saved_card_config[k]:
                                     saved_card_config[k]["color"] = v["color"]
                         self.home_card_config = saved_card_config
@@ -243,6 +246,17 @@ class AppState:
                         if "home_show_quote" in data: self.home_card_config["quote"]["visible"] = data["home_show_quote"]
                         if "home_show_tip" in data: self.home_card_config["tip"]["visible"] = data["home_show_tip"]
                         if "home_show_song" in data: self.home_card_config["song"]["visible"] = data["home_show_song"]
+
+                    # Equalize card heights as per user request
+                    if self.home_card_config:
+                        app_h = self.home_card_config.get("app", {}).get("h", 180)
+                        tip_h = self.home_card_config.get("tip", {}).get("h", 180)
+                        target_h = max(app_h, tip_h)
+                        if "quote" in self.home_card_config:
+                            self.home_card_config["quote"]["h"] = target_h
+                        if "song" in self.home_card_config:
+                            self.home_card_config["song"]["h"] = target_h
+
 
                     self.use_mastodon_quote = data.get("use_mastodon_quote", True)
                     self.quote_mastodon_server = data.get("quote_mastodon_server", "mstdn.social")

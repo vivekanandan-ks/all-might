@@ -294,7 +294,7 @@ class SongCard(GlassContainer):
         self.update_card_content()
 
     def update_card_content(self):
-        self.tooltip = self.target_url
+        self.tooltip = "Click for options"
         self.padding = 15
         self.image_src = None # We will use a dedicated Image control, not a background
 
@@ -322,15 +322,17 @@ class SongCard(GlassContainer):
         self.content = ft.Column(
             [
                 ft.Row([ft.Text("Song of the Day", size=12, color="onSurfaceVariant", weight=ft.FontWeight.BOLD)]),
-                ft.Container(height=5),
-                ft.Row(
-                    [
-                        thumbnail_control,
-                        text_content
-                    ],
-                    spacing=15,
-                    alignment=ft.MainAxisAlignment.START,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            thumbnail_control,
+                            text_content
+                        ],
+                        spacing=15,
+                        alignment=ft.MainAxisAlignment.START,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER
+                    ),
+                    expand=True
                 )
             ],
             alignment=ft.MainAxisAlignment.CENTER
@@ -379,8 +381,6 @@ class SongCard(GlassContainer):
                  controls_mod.show_toast_global("Copied to clipboard")
 
         dlg_content = ft.Column([
-            ft.Text("Select a Link to Open", color="onSurface", weight=ft.FontWeight.BOLD),
-            ft.Container(height=10),
             ft.Row([
                 ft.ElevatedButton("Open Song Link", icon=ft.Icons.MUSIC_NOTE, on_click=open_song, width=220, tooltip=self.target_url),
                 ft.IconButton(ft.Icons.COPY, tooltip="Copy Song Link", on_click=lambda e: copy_text(e, self.target_url))
@@ -425,7 +425,7 @@ def get_home_view():
     def get_card_color(color_name):
         return COLOR_NAME_MAP.get(color_name, ft.Colors.BLUE)
 
-    def create_dynamic_card_click_handler(link):
+    def create_dynamic_card_click_handler(link, refresh_callback=None):
         def handler(e):
             if not link: return
 
@@ -441,21 +441,25 @@ def get_home_view():
                 if close_dialog[0]:
                     close_dialog[0]()
             
-            # For general dynamic cards, we might only have one link (Mastodon or content)
-            # So we show "Open Link" (which is usually the mastodon post or the link in it)
-            
             dlg_content = ft.Column([
-                ft.Text("Select a Link to Open", color="onSurface", weight=ft.FontWeight.BOLD),
-                ft.Container(height=10),
                 ft.Row([
-                     ft.ElevatedButton("Open Link", icon=ft.Icons.OPEN_IN_BROWSER, on_click=open_link, width=220, tooltip=link),
+                     ft.ElevatedButton("Open Mastodon Post", icon=ft.Icons.FORUM, on_click=open_link, width=220, tooltip=link),
                      ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=lambda e: copy_link(e, link))
                 ], alignment=ft.MainAxisAlignment.CENTER),
             ], tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
 
-            actions = [
-                ft.TextButton("Close", on_click=lambda e: close_dialog[0]()),
-            ]
+            def refresh_action(e):
+                if close_dialog[0]: close_dialog[0]()
+                if refresh_callback:
+                    if controls_mod.show_toast_global:
+                        controls_mod.show_toast_global("Refetching...")
+                    refresh_callback()
+
+            actions = []
+            if refresh_callback:
+                actions.append(ft.IconButton(ft.Icons.REFRESH, tooltip="Refresh", on_click=refresh_action))
+            
+            actions.append(ft.TextButton("Close", on_click=lambda e: close_dialog[0]()))
 
             close_dialog[0] = controls_mod.show_glass_dialog("Link Options", dlg_content, actions)
         return handler
@@ -560,15 +564,45 @@ def get_home_view():
         
         # Initial State (Default or Cached)
         q_text_val = quote_data["text"]
-        q_tooltip_val = "Quote of the Day"
+        q_tooltip_val = "Click for options"
         q_click_handler = [None] # Mutable ref for click handler
+
+        def fetch_fresh_quote(force_refresh=False):
+            # Check cache to avoid refetching on navigation unless forced
+            if state.mastodon_quote_cache and not force_refresh:
+                return
+
+            if state.use_mastodon_quote:
+                fetched = get_mastodon_quote(state.quote_mastodon_account, state.quote_mastodon_tag, server=state.quote_mastodon_server)
+                if fetched == {}:
+                    q_text_control.value = quote_data["text"]
+                    q_click_handler[0] = None
+                    main_card.tooltip = "Click for options"
+                elif fetched:
+                    state.mastodon_quote_cache = fetched
+                    state.last_fetched_quote = fetched
+                    state.save_settings()
+                    
+                    q_text_control.value = fetched.get("text", "...")
+                    link = fetched.get("link", "")
+                    if link:
+                        main_card.tooltip = "Click for options"
+                        q_click_handler[0] = create_dynamic_card_click_handler(link, refresh_quote_action)
+                
+                if q_text_control.page:
+                    q_text_control.update()
+                    main_card.update()
+
+        def refresh_quote_action():
+            state.mastodon_quote_cache = None
+            threading.Thread(target=lambda: fetch_fresh_quote(force_refresh=True), daemon=True).start()
 
         if state.use_mastodon_quote and state.mastodon_quote_cache:
              q_text_val = state.mastodon_quote_cache.get("text", "...")
              link = state.mastodon_quote_cache.get("link", "")
              if link:
-                 q_tooltip_val = f"Open on Mastodon: {link}"
-                 q_click_handler[0] = create_dynamic_card_click_handler(link)
+                 q_tooltip_val = "Click for options"
+                 q_click_handler[0] = create_dynamic_card_click_handler(link, refresh_quote_action)
 
         # Controls that need updating
         q_text_control = ft.Text(
@@ -595,37 +629,6 @@ def get_home_view():
         cards_row2.append(create_stacked_card(main_card, base_col, height=cfg["h"], width=cfg["w"], expand=1))
 
         # Background Fetch for Quote
-        def fetch_fresh_quote():
-            # Check cache to avoid refetching on navigation
-            if state.mastodon_quote_cache:
-                return
-
-            if state.use_mastodon_quote:
-                fetched = get_mastodon_quote(state.quote_mastodon_account, state.quote_mastodon_tag, server=state.quote_mastodon_server)
-                if fetched == {}:
-                    # Fetched but filtered out everything (or empty feed)
-                    # Fallback to default random quote
-                    q_text_control.value = quote_data["text"]
-                    q_click_handler[0] = None
-                    main_card.tooltip = "Quote of the Day"
-                elif fetched:
-                    # New valid data
-                    state.mastodon_quote_cache = fetched
-                    state.last_fetched_quote = fetched
-                    state.save_settings()
-                    
-                    q_text_control.value = fetched.get("text", "...")
-                    link = fetched.get("link", "")
-                    if link:
-                        main_card.tooltip = f"Open on Mastodon: {link}"
-                        q_click_handler[0] = create_dynamic_card_click_handler(link)
-                
-                # If fetch failed (None), keep existing (default)
-                
-                if q_text_control.page:
-                    q_text_control.update()
-                    main_card.update()
-
         threading.Thread(target=fetch_fresh_quote, daemon=True).start()
 
     # Build Song Card
