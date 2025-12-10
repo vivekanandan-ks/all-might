@@ -107,6 +107,7 @@ class AppState:
         self.song_mastodon_tag = ""
         self.song_mastodon_cache = None
         self.last_fetched_song = None
+        self.default_song_cache = None
 
         # Carousel Settings
         self.carousel_use_mastodon = True
@@ -259,6 +260,7 @@ class AppState:
                     self.song_mastodon_account = data.get("song_mastodon_account", "")
                     self.song_mastodon_tag = data.get("song_mastodon_tag", "")
                     self.last_fetched_song = data.get("last_fetched_song", None)
+                    self.default_song_cache = data.get("default_song_cache", None)
 
                     self.carousel_use_mastodon = data.get("carousel_use_mastodon", True)
                     self.carousel_mastodon_account = data.get("carousel_mastodon_account", "")
@@ -359,6 +361,7 @@ class AppState:
                 "song_mastodon_account": self.song_mastodon_account,
                 "song_mastodon_tag": self.song_mastodon_tag,
                 "last_fetched_song": self.last_fetched_song,
+                "default_song_cache": self.default_song_cache,
 
                 "carousel_use_mastodon": self.carousel_use_mastodon,
                 "carousel_mastodon_account": self.carousel_mastodon_account,

@@ -178,6 +178,48 @@ def get_mastodon_feed(account, tag, limit=5):
         print(f"Error fetching Mastodon feed: {e}")
         return []
 
+def fetch_opengraph_data(url):
+
+    try:
+
+        req = urllib.request.Request(
+
+            url, 
+
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+
+        )
+
+        with urllib.request.urlopen(req, timeout=10) as response:
+
+            html_content = response.read().decode('utf-8', errors='ignore')
+
+            
+
+        title_match = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html_content, re.IGNORECASE)
+
+        image_match = re.search(r'<meta\s+property="og:image"\s+content="([^"]+)"', html_content, re.IGNORECASE)
+
+        
+
+        title = title_match.group(1) if title_match else "Unknown Title"
+
+        image = image_match.group(1) if image_match else None
+
+        
+
+        # Clean title (sometimes song.link adds "on Service")
+        # But raw title is probably fine.
+        
+        return {
+            "title": title,
+            "image": image,
+            "url": url
+        }
+    except Exception as e:
+        print(f"Error fetching OpenGraph data: {e}")
+        return None
+
 def get_mastodon_quote(account, tag):
     feed = get_mastodon_feed(account, tag, limit=1)
     if feed:

@@ -1,22 +1,24 @@
 import flet as ft
 from state import state
 from controls import *
+import controls as controls_mod # Alias to avoid conflict if any, but explicit import is needed
 from constants import *
 from collections import Counter
 import shlex
 import subprocess
 import time
 import datetime
-from utils import get_mastodon_quote, get_mastodon_feed
+from utils import get_mastodon_quote, get_mastodon_feed, fetch_opengraph_data
 
 def get_search_view(perform_search, channel_dropdown, search_field, search_icon_btn, results_column, result_count_text, filter_badge_container, toggle_filter_menu, refresh_callback=None):
-    channel_dropdown.border_radius = state.get_radius('selector')
+    # channel_dropdown is now a GlassContainer pre-styled in main.py
     
     header_controls = [
         channel_dropdown,
-        ft.Container(
+        GlassContainer(
             content=ft.Row([search_field, search_icon_btn], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, spacing=0),
-            bgcolor="surfaceVariant",
+            opacity=0.1,
+            blur_sigma=15,
             border_radius=state.get_radius('search'),
             padding=ft.padding.only(left=15, right=5),
             expand=True
@@ -93,7 +95,8 @@ def get_lists_view(selected_list_name, is_viewing_favourites, refresh_list_detai
                 padding=ft.padding.symmetric(horizontal=12, vertical=8),
                 content=ft.Row(spacing=6, controls=[ft.Icon(ft.Icons.TERMINAL, size=16, color=ft.Colors.WHITE), ft.Text(btn_text, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)]),
                 on_click=run_list_shell,
-                bgcolor=ft.Colors.BLUE_600,
+                bgcolor=ft.Colors.with_opacity(0.4, ft.Colors.BLUE_600),
+                blur=ft.Blur(15, 15, ft.BlurTileMode.MIRROR),
                 border_radius=state.get_radius('button'),
                 ink=True,
                 tooltip=tooltip_cmd
@@ -197,6 +200,198 @@ def create_stacked_card(content, base_color, width=None, height=None, expand=1):
         )
     )
 
+class SongCard(GlassContainer):
+    def __init__(self, data_cfg, width=None, height=None):
+        self.cfg = data_cfg
+        self.base_col = COLOR_NAME_MAP.get(self.cfg.get("color"), ft.Colors.BLUE)
+        self.default_url = "https://song.link/https://music.youtube.com/watch?v=CzE7qEPWuG4&list=RDAMVMI7ftgtJYdgs"
+        
+        # Initial State
+        self.title_text = "Loading Song..."
+        self.artist_text = ""
+        self.bg_image = None
+        self.target_url = self.default_url
+        self.custom_tooltip = "Song of the Day"
+        
+        super().__init__(
+            padding=15, border_radius=20,
+            bgcolor=ft.Colors.with_opacity(0.15, self.base_col),
+            content=ft.Container(), # Placeholder
+            on_click=self.handle_click
+        )
+        self.width = width
+        self.height = height
+        
+        self.initialize_state()
+        self.update_card_content()
+
+    def initialize_state(self):
+        if state.song_use_mastodon:
+            if state.song_mastodon_cache:
+                self.title_text = state.song_mastodon_cache.get("text", "...").split("\n")[0]
+                self.artist_text = state.song_mastodon_cache.get("author", "")
+                self.target_url = state.song_mastodon_cache.get("link", "")
+                self.custom_tooltip = f"Open in browser: {self.target_url}"
+        else:
+            self.target_url = self.default_url
+            self.custom_tooltip = f"Open in browser: {self.target_url}"
+            if state.default_song_cache:
+                self.title_text = state.default_song_cache.get("title", "Song of the Day")
+                self.artist_text = "All-Might Pick"
+                self.bg_image = state.default_song_cache.get("image")
+            # Else remains Loading...
+
+    def did_mount(self):
+        # Always fetch fresh data on mount (app launch/refresh) to ensure latest link
+        if state.song_use_mastodon:
+            threading.Thread(target=self.fetch_mastodon_meta, daemon=True).start()
+        else:
+            threading.Thread(target=self.fetch_default_meta, daemon=True).start()
+
+    def fetch_default_meta(self):
+        data = fetch_opengraph_data(self.default_url)
+        if data:
+            data['fetched_at'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            state.default_song_cache = data
+            state.save_settings()
+            self.title_text = data.get("title", "Song of the Day")
+            self.artist_text = "All-Might Pick"
+            self.bg_image = data.get("image")
+            self.update_card_content()
+
+    def fetch_mastodon_meta(self):
+        fetched = get_mastodon_quote(state.song_mastodon_account, state.song_mastodon_tag)
+        if fetched:
+            fetched['fetched_at'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            state.song_mastodon_cache = fetched
+            state.last_fetched_song = fetched
+            state.save_settings()
+            self.title_text = fetched.get("text", "...").split("\n")[0]
+            self.artist_text = fetched.get("author", "")
+            self.target_url = fetched.get("link", "")
+            self.custom_tooltip = f"Open in browser: {self.target_url}"
+            self.update_card_content()
+
+    def update_card_content(self):
+        self.tooltip = self.custom_tooltip
+        self.padding = 15
+        self.image_src = None # We will use a dedicated Image control, not a background
+
+        thumbnail_control = None
+        if self.bg_image:
+            thumbnail_control = ft.Image(src=self.bg_image, width=80, height=80, fit=ft.ImageFit.COVER, border_radius=10)
+        else:
+            thumbnail_control = ft.Container(
+                width=80, height=80,
+                bgcolor=ft.Colors.with_opacity(0.1, state.get_base_color()),
+                border_radius=10,
+                alignment=ft.alignment.center,
+                content=ft.Icon(ft.Icons.MUSIC_NOTE, size=40, color="onSurface")
+            )
+
+        text_content = ft.Column(
+            [
+                ft.Text("Song of the Day", size=10, color="onSurfaceVariant", weight=ft.FontWeight.BOLD),
+                ft.Text(self.title_text, size=16, color="onSurface", weight=ft.FontWeight.BOLD, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                ft.Text(self.artist_text, size=12, color="onSurfaceVariant")
+            ],
+            spacing=5,
+            alignment=ft.MainAxisAlignment.CENTER,
+            horizontal_alignment=ft.CrossAxisAlignment.START,
+            expand=True
+        )
+
+        self.content = ft.Row(
+            [
+                thumbnail_control,
+                text_content
+            ],
+            spacing=15,
+            alignment=ft.MainAxisAlignment.START,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER
+        )
+        
+        if self.page: self.update()
+
+    def handle_click(self, e):
+        if not self.target_url: return
+
+        close_func = [None]
+
+        def copy_link(e):
+            e.page.set_clipboard(self.target_url)
+            if controls_mod.show_toast_global:
+                 controls_mod.show_toast_global("Link copied to clipboard")
+
+        def open_link(e):
+            e.page.launch_url(self.target_url)
+            if close_func[0]: close_func[0]()
+
+        def refresh_meta(e):
+            if close_func[0]: close_func[0]()
+            if controls_mod.show_toast_global:
+                controls_mod.show_toast_global("Refetching song data...")
+            
+            def run_fetch():
+                if state.song_use_mastodon:
+                     fetched = get_mastodon_quote(state.song_mastodon_account, state.song_mastodon_tag)
+                     if fetched and fetched.get("text"):
+                        fetched['fetched_at'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        state.song_mastodon_cache = fetched
+                        state.last_fetched_song = fetched
+                        state.save_settings()
+                        self.title_text = fetched.get("text", "...").split("\n")[0]
+                        self.artist_text = fetched.get("author", "")
+                        self.target_url = fetched.get("link", "")
+                        if controls_mod.show_toast_global:
+                            controls_mod.show_toast_global("Song data refreshed")
+                     else:
+                        if controls_mod.show_toast_global:
+                            controls_mod.show_toast_global("Refetch failed, keeping old data")
+                else:
+                     data = fetch_opengraph_data(self.default_url)
+                     if data and data.get("title"):
+                        data['fetched_at'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        state.default_song_cache = data
+                        state.save_settings()
+                        self.title_text = data.get("title", "Song of the Day")
+                        self.artist_text = "All-Might Pick"
+                        self.bg_image = data.get("image")
+                        if controls_mod.show_toast_global:
+                            controls_mod.show_toast_global("Song data refreshed")
+                     else:
+                        if controls_mod.show_toast_global:
+                            controls_mod.show_toast_global("Refetch failed, keeping old data")
+                
+                self.update_card_content()
+
+            threading.Thread(target=run_fetch, daemon=True).start()
+
+        # Get fetched time
+        fetched_at = "Unknown"
+        if state.song_use_mastodon and state.song_mastodon_cache:
+            fetched_at = state.song_mastodon_cache.get('fetched_at', 'Unknown')
+        elif not state.song_use_mastodon and state.default_song_cache:
+            fetched_at = state.default_song_cache.get('fetched_at', 'Unknown')
+
+        dlg_content = ft.Column([
+            ft.Text("Do you want to open this song link in your browser?", color="onSurface"),
+            ft.Container(height=10),
+            ft.Text(self.target_url, size=12, color="blue", selectable=True, italic=True),
+            ft.Container(height=5),
+            ft.Text(f"Cached: {fetched_at}", size=10, color="onSurfaceVariant", italic=True)
+        ], tight=True)
+
+        actions = [
+            ft.IconButton(ft.Icons.REFRESH, tooltip="Refresh Metadata", on_click=refresh_meta),
+            ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=copy_link),
+            ft.TextButton("No", on_click=lambda e: close_func[0]()),
+            ft.ElevatedButton("Yes", on_click=open_link, bgcolor=ft.Colors.GREEN, color=ft.Colors.WHITE, icon=ft.Icons.CHECK),
+        ]
+
+        if controls_mod.show_glass_dialog:
+             close_func[0] = controls_mod.show_glass_dialog("Open Link?", dlg_content, actions)
+
 def get_home_view():
     state.update_daily_indices()
 
@@ -223,27 +418,32 @@ def get_home_view():
     def create_dynamic_card_click_handler(link):
         def handler(e):
             if not link: return
+
+            close_dialog = [None]
+
             def copy_link(e):
                 e.page.set_clipboard(link)
-                show_toast("Link copied to clipboard")
+                if controls_mod.show_toast_global:
+                    controls_mod.show_toast_global("Link copied to clipboard")
+
             def open_link(e):
                 e.page.launch_url(link)
-                e.page.close(dlg)
-            dlg = ft.AlertDialog(
-                title=ft.Text("Open Link?"),
-                content=ft.Column([
-                    ft.Text("Do you want to open this Mastodon post in your browser?"),
-                    ft.Container(height=10),
-                    ft.Text(link, size=12, color="blue", selectable=True, italic=True)
-                ], tight=True),
-                actions=[
-                    ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=copy_link),
-                    ft.TextButton("No", on_click=lambda e: e.page.close(dlg)),
-                    ft.TextButton("Yes", on_click=open_link),
-                ],
-                actions_alignment=ft.MainAxisAlignment.END
-            )
-            e.page.open(dlg)
+                if close_dialog[0]:
+                    close_dialog[0]()
+            
+            actions = [
+                ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=copy_link),
+                ft.TextButton("No", on_click=lambda e: close_dialog[0]()),
+                ft.ElevatedButton("Yes", on_click=open_link, bgcolor=ft.Colors.GREEN, color=ft.Colors.WHITE, icon=ft.Icons.CHECK),
+            ]
+            
+            dlg_content = ft.Column([
+                ft.Text("Do you want to open this Mastodon post in your browser?", color="onSurface"),
+                ft.Container(height=10),
+                ft.Text(link, size=12, color="blue", selectable=True, italic=True)
+            ], tight=True)
+
+            close_dialog[0] = controls_mod.show_glass_dialog("Open Link?", dlg_content, actions)
         return handler
 
     # Build App Card
@@ -276,7 +476,7 @@ def get_home_view():
 
         main_card = GlassContainer(
             padding=20, border_radius=20,
-            bgcolor=ft.Colors.with_opacity(0.9, base_col),
+            bgcolor=ft.Colors.with_opacity(0.15, base_col),
             tooltip=app_tooltip,
             on_click=app_click,
             content=ft.Column(
@@ -321,7 +521,7 @@ def get_home_view():
 
         main_card = GlassContainer(
             padding=15, border_radius=20,
-            bgcolor=ft.Colors.with_opacity(0.9, base_col),
+            bgcolor=ft.Colors.with_opacity(0.15, base_col),
             tooltip=tip_tooltip,
             on_click=tip_click,
             content=ft.Column(
@@ -368,7 +568,7 @@ def get_home_view():
 
         main_card = GlassContainer(
             padding=15, border_radius=20,
-            bgcolor=ft.Colors.with_opacity(0.9, base_col),
+            bgcolor=ft.Colors.with_opacity(0.15, base_col),
             tooltip=q_tooltip,
             on_click=q_click,
             content=ft.Column(
@@ -392,45 +592,7 @@ def get_home_view():
     cfg = get_cfg("song")
     if cfg["visible"]:
         base_col = get_card_color(cfg["color"])
-        
-        song_title = song_data["title"]
-        song_artist = song_data["artist"]
-        song_tooltip = "Song of the Day"
-        song_click = None
-
-        if state.song_use_mastodon:
-            if not state.song_mastodon_cache:
-                fetched = get_mastodon_quote(state.song_mastodon_account, state.song_mastodon_tag)
-                if fetched:
-                    state.song_mastodon_cache = fetched
-                    state.last_fetched_song = fetched
-                    state.save_settings()
-                elif state.last_fetched_song:
-                    state.song_mastodon_cache = state.last_fetched_song
-            
-            if state.song_mastodon_cache:
-                song_title = state.song_mastodon_cache.get("text", "...").split("\n")[0] # Use first line as title
-                song_artist = state.song_mastodon_cache.get("author", "")
-                link = state.song_mastodon_cache.get("link", "")
-                if link:
-                    song_tooltip = f"Open on Mastodon: {link}"
-                    song_click = create_dynamic_card_click_handler(link)
-
-        main_card = GlassContainer(
-            padding=15, border_radius=20,
-            bgcolor=ft.Colors.with_opacity(0.9, base_col),
-            tooltip=song_tooltip,
-            on_click=song_click,
-            content=ft.Column(
-                alignment=ft.MainAxisAlignment.CENTER,
-                controls=[
-                    ft.Row([ft.Text("Song of the Day", size=10, color=ft.Colors.BLACK54, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
-                    ft.Row([ft.Icon(ft.Icons.MUSIC_NOTE, size=30, color=ft.Colors.BLACK87)], alignment=get_alignment(cfg["align"])),
-                    ft.Row([ft.Text(song_title, size=16, color=ft.Colors.BLACK87, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
-                    ft.Row([ft.Text(song_artist, size=12, color=ft.Colors.BLACK54)], alignment=get_alignment(cfg["align"]))
-                ]
-            )
-        )
+        main_card = SongCard(cfg, width=cfg["w"], height=cfg["h"])
         cards_row2.append(create_stacked_card(main_card, base_col, height=cfg["h"], width=cfg["w"], expand=1))
 
     # --- Carousel Data Logic ---
@@ -495,7 +657,7 @@ def get_home_view():
 
     threading.Thread(target=fetch_fresh_carousel_data, daemon=True).start()
 
-    controls = []
+    view_controls = []
 
     header_row = ft.Row(
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -509,26 +671,26 @@ def get_home_view():
             ft.Container(
                 width=400,
                 content=ft.Column([
-                    ft.Text("App tips 💡", size=12, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"),
+                    ft.Text("App tips", size=12, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"),
                     carousel_widget
                 ])
             )
         ]
     )
-    controls.append(header_row)
+    view_controls.append(header_row)
 
     if cards_row1 or cards_row2:
-        controls.append(ft.Container(height=30))
-        controls.append(ft.Text("Daily Digest", size=18, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"))
-        controls.append(ft.Container(height=10))
+        view_controls.append(ft.Container(height=30))
+        view_controls.append(ft.Text("Daily Digest", size=18, weight=ft.FontWeight.BOLD, color="onSurfaceVariant"))
+        view_controls.append(ft.Container(height=10))
 
         if cards_row1:
-            controls.append(ft.Row(controls=cards_row1, spacing=20, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START))
+            view_controls.append(ft.Row(controls=cards_row1, spacing=20, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START))
         if cards_row2:
-            controls.append(ft.Container(height=40))
-            controls.append(ft.Row(controls=cards_row2, spacing=20, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START))
+            view_controls.append(ft.Container(height=40))
+            view_controls.append(ft.Row(controls=cards_row2, spacing=20, alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START))
 
-    controls.append(ft.Container(height=100))
+    view_controls.append(ft.Container(height=100))
 
     return ft.Container(
         expand=True,
@@ -536,7 +698,7 @@ def get_home_view():
         padding=ft.padding.only(top=40, left=30, right=30, bottom=0),
         content=ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.START,
-            controls=controls,
+            controls=view_controls,
             scroll=ft.ScrollMode.AUTO
         )
     )
@@ -1661,9 +1823,21 @@ def _launch_shell_dialog(display_cmd, title, page):
     cmd_list = shlex.split(display_cmd)
     
     output_text = ft.Text("Launching process...", font_family="monospace", size=12)
-    dlg = ft.AlertDialog(title=ft.Text(f"Launching {title}"), content=ft.Container(width=500, height=150, content=ft.Column([ft.Text(f"Command: {display_cmd}", color=ft.Colors.BLUE_200, size=12, selectable=True), ft.Divider(), ft.Column([output_text], scroll=ft.ScrollMode.AUTO, expand=True)])), actions=[ft.TextButton("Close", on_click=lambda e: page.close(dlg))])
-    page.open(dlg)
-    page.update()
+    
+    content = ft.Container(
+        width=500, height=150,
+        content=ft.Column([
+            ft.Text(f"Command: {display_cmd}", color=ft.Colors.BLUE_200, size=12, selectable=True), 
+            ft.Divider(), 
+            ft.Column([output_text], scroll=ft.ScrollMode.AUTO, expand=True)
+        ])
+    )
+    
+    close_func = [None]
+    actions=[ft.TextButton("Close", on_click=lambda e: close_func[0]())]
+
+    if controls_mod.show_glass_dialog:
+            close_func[0] = controls_mod.show_glass_dialog(f"Launching {title}", content, actions)
 
     try:
         # Use pipes to capture output
