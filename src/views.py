@@ -458,7 +458,7 @@ def get_home_view():
 
         if state.app_use_mastodon:
             if not state.app_mastodon_cache:
-                fetched = get_mastodon_quote(state.app_mastodon_account, state.app_mastodon_tag)
+                fetched = get_mastodon_quote(state.app_mastodon_account, state.app_mastodon_tag, server=state.app_mastodon_server)
                 if fetched:
                     state.app_mastodon_cache = fetched
                     state.last_fetched_app = fetched
@@ -503,7 +503,7 @@ def get_home_view():
 
         if state.tip_use_mastodon:
             if not state.tip_mastodon_cache:
-                fetched = get_mastodon_quote(state.tip_mastodon_account, state.tip_mastodon_tag)
+                fetched = get_mastodon_quote(state.tip_mastodon_account, state.tip_mastodon_tag, server=state.tip_mastodon_server)
                 if fetched:
                     state.tip_mastodon_cache = fetched
                     state.last_fetched_tip = fetched
@@ -544,49 +544,77 @@ def get_home_view():
     if cfg["visible"]:
         base_col = get_card_color(cfg["color"])
         
-        q_text = quote_data["text"]
-        q_link = ""
-        q_tooltip = "Quote of the Day"
-        q_click = None
+        # Initial State (Default or Cached)
+        q_text_val = quote_data["text"]
+        q_tooltip_val = "Quote of the Day"
+        q_click_handler = [None] # Mutable ref for click handler
 
-        if state.use_mastodon_quote:
-            if not state.mastodon_quote_cache:
-                fetched = get_mastodon_quote(state.quote_mastodon_account, state.quote_mastodon_tag)
-                if fetched:
-                    state.mastodon_quote_cache = fetched
-                    state.last_fetched_quote = fetched
-                    state.save_settings()
-                elif state.last_fetched_quote:
-                    state.mastodon_quote_cache = state.last_fetched_quote
-            
-            if state.mastodon_quote_cache:
-                q_text = state.mastodon_quote_cache.get("text", "...")
-                q_link = state.mastodon_quote_cache.get("link", "")
-                if q_link:
-                    q_tooltip = f"Open on Mastodon: {q_link}"
-                    q_click = create_dynamic_card_click_handler(q_link)
+        if state.use_mastodon_quote and state.mastodon_quote_cache:
+             q_text_val = state.mastodon_quote_cache.get("text", "...")
+             link = state.mastodon_quote_cache.get("link", "")
+             if link:
+                 q_tooltip_val = f"Open on Mastodon: {link}"
+                 q_click_handler[0] = create_dynamic_card_click_handler(link)
 
+        # Controls that need updating
+        q_text_control = ft.Text(
+            q_text_val, 
+            size=13, 
+            color=ft.Colors.WHITE, 
+            italic=state.quote_style_italic, 
+            weight=ft.FontWeight.BOLD if state.quote_style_bold else ft.FontWeight.NORMAL,
+            text_align=ft.TextAlign.LEFT if cfg["align"] == "left" else (ft.TextAlign.RIGHT if cfg["align"] == "right" else ft.TextAlign.CENTER)
+        )
+        
         main_card = GlassContainer(
             padding=15, border_radius=20,
             bgcolor=ft.Colors.with_opacity(0.15, base_col),
-            tooltip=q_tooltip,
-            on_click=q_click,
+            tooltip=q_tooltip_val,
+            on_click=lambda e: q_click_handler[0](e) if q_click_handler[0] else None,
             content=ft.Column(
                 alignment=ft.MainAxisAlignment.CENTER,
                 controls=[
                     ft.Row([ft.Text("Quote of the Day", size=10, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
-                    ft.Text(
-                        q_text, 
-                        size=13, 
-                        color=ft.Colors.WHITE, 
-                        italic=state.quote_style_italic, 
-                        weight=ft.FontWeight.BOLD if state.quote_style_bold else ft.FontWeight.NORMAL,
-                        text_align=ft.TextAlign.LEFT if cfg["align"] == "left" else (ft.TextAlign.RIGHT if cfg["align"] == "right" else ft.TextAlign.CENTER)
-                    ),
+                    q_text_control,
                 ]
             )
         )
         cards_row2.append(create_stacked_card(main_card, base_col, height=cfg["h"], width=cfg["w"], expand=1))
+
+        # Background Fetch for Quote
+        def fetch_fresh_quote():
+            if state.use_mastodon_quote:
+                fetched = get_mastodon_quote(state.quote_mastodon_account, state.quote_mastodon_tag, server=state.quote_mastodon_server)
+                if fetched == {}:
+                    # Fetched but filtered out everything (or empty feed)
+                    # Fallback to default random quote if cache was also empty/invalid?
+                    # Or keep cache? User said "just keep a random quote" if no content.
+                    # If we have cache, maybe we shouldn't wipe it unless it's stale?
+                    # But "just keep a random quote" implies showing the default.
+                    state.mastodon_quote_cache = None
+                    q_text_control.value = quote_data["text"]
+                    q_click_handler[0] = None
+                    main_card.tooltip = "Quote of the Day"
+                elif fetched:
+                    # New valid data
+                    if fetched != state.mastodon_quote_cache:
+                        state.mastodon_quote_cache = fetched
+                        state.last_fetched_quote = fetched
+                        state.save_settings()
+                        
+                        q_text_control.value = fetched.get("text", "...")
+                        link = fetched.get("link", "")
+                        if link:
+                            main_card.tooltip = f"Open on Mastodon: {link}"
+                            q_click_handler[0] = create_dynamic_card_click_handler(link)
+                
+                # If fetch failed (None), keep existing (cache or default)
+                
+                if q_text_control.page:
+                    q_text_control.update()
+                    main_card.update()
+
+        threading.Thread(target=fetch_fresh_quote, daemon=True).start()
 
     # Build Song Card
     cfg = get_cfg("song")
@@ -632,7 +660,7 @@ def get_home_view():
     def fetch_fresh_carousel_data():
         if state.carousel_use_mastodon and state.carousel_mastodon_account and state.carousel_mastodon_tag:
             try:
-                feed = get_mastodon_feed(state.carousel_mastodon_account, state.carousel_mastodon_tag, limit=5)
+                feed = get_mastodon_feed(state.carousel_mastodon_account, state.carousel_mastodon_tag, limit=5, server=state.carousel_mastodon_server)
                 if feed:
                     state.carousel_mastodon_cache = feed
                     state.last_fetched_carousel = feed
@@ -1301,6 +1329,11 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 state.save_settings()
                 state.mastodon_quote_cache = None # Clear cache to force refresh
 
+            def update_mastodon_server(e):
+                state.quote_mastodon_server = e.control.value
+                state.save_settings()
+                state.mastodon_quote_cache = None
+
             def update_mastodon_account(e):
                 state.quote_mastodon_account = e.control.value
                 state.save_settings()
@@ -1323,6 +1356,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 ft.Divider(),
                 ft.Text("Dynamic Source (Mastodon)", weight=ft.FontWeight.BOLD),
                 ft.Row([ft.Text("Enable RSS Fetch:"), ft.Switch(value=state.use_mastodon_quote, on_change=update_use_mastodon)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.TextField(label="Server (e.g. mstdn.social)", value=state.quote_mastodon_server, on_blur=update_mastodon_server, text_size=12),
                 ft.TextField(label="Account (e.g. vivekanandanks)", value=state.quote_mastodon_account, on_blur=update_mastodon_account, text_size=12),
                 ft.TextField(label="Tag (e.g. mha)", value=state.quote_mastodon_tag, on_blur=update_mastodon_tag, text_size=12),
                 ft.Container(height=10),
@@ -1334,6 +1368,11 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
         elif card_key == "app":
             def update_app_mastodon(e):
                 state.app_use_mastodon = e.control.value
+                state.save_settings()
+                state.app_mastodon_cache = None
+
+            def update_app_server(e):
+                state.app_mastodon_server = e.control.value
                 state.save_settings()
                 state.app_mastodon_cache = None
 
@@ -1351,6 +1390,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 ft.Divider(),
                 ft.Text("Dynamic Source (Mastodon)", weight=ft.FontWeight.BOLD),
                 ft.Row([ft.Text("Enable RSS Fetch:"), ft.Switch(value=state.app_use_mastodon, on_change=update_app_mastodon)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.TextField(label="Server", value=state.app_mastodon_server, on_blur=update_app_server, text_size=12),
                 ft.TextField(label="Account", value=state.app_mastodon_account, on_blur=update_app_account, text_size=12),
                 ft.TextField(label="Tag", value=state.app_mastodon_tag, on_blur=update_app_tag, text_size=12),
             ])
@@ -1358,6 +1398,11 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
         elif card_key == "tip":
             def update_tip_mastodon(e):
                 state.tip_use_mastodon = e.control.value
+                state.save_settings()
+                state.tip_mastodon_cache = None
+
+            def update_tip_server(e):
+                state.tip_mastodon_server = e.control.value
                 state.save_settings()
                 state.tip_mastodon_cache = None
 
@@ -1375,6 +1420,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 ft.Divider(),
                 ft.Text("Dynamic Source (Mastodon)", weight=ft.FontWeight.BOLD),
                 ft.Row([ft.Text("Enable RSS Fetch:"), ft.Switch(value=state.tip_use_mastodon, on_change=update_tip_mastodon)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.TextField(label="Server", value=state.tip_mastodon_server, on_blur=update_tip_server, text_size=12),
                 ft.TextField(label="Account", value=state.tip_mastodon_account, on_blur=update_tip_account, text_size=12),
                 ft.TextField(label="Tag", value=state.tip_mastodon_tag, on_blur=update_tip_tag, text_size=12),
             ])
@@ -1382,6 +1428,11 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
         elif card_key == "song":
             def update_song_mastodon(e):
                 state.song_use_mastodon = e.control.value
+                state.save_settings()
+                state.song_mastodon_cache = None
+
+            def update_song_server(e):
+                state.song_mastodon_server = e.control.value
                 state.save_settings()
                 state.song_mastodon_cache = None
 
@@ -1399,6 +1450,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 ft.Divider(),
                 ft.Text("Dynamic Source (Mastodon)", weight=ft.FontWeight.BOLD),
                 ft.Row([ft.Text("Enable RSS Fetch:"), ft.Switch(value=state.song_use_mastodon, on_change=update_song_mastodon)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.TextField(label="Server", value=state.song_mastodon_server, on_blur=update_song_server, text_size=12),
                 ft.TextField(label="Account", value=state.song_mastodon_account, on_blur=update_song_account, text_size=12),
                 ft.TextField(label="Tag", value=state.song_mastodon_tag, on_blur=update_song_tag, text_size=12),
             ])
@@ -1406,6 +1458,11 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
         elif card_key == "carousel":
             def update_carousel_mastodon(e):
                 state.carousel_use_mastodon = e.control.value
+                state.save_settings()
+                state.carousel_mastodon_cache = None
+
+            def update_carousel_server(e):
+                state.carousel_mastodon_server = e.control.value
                 state.save_settings()
                 state.carousel_mastodon_cache = None
 
@@ -1423,6 +1480,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 ft.Divider(),
                 ft.Text("Dynamic Source (Mastodon)", weight=ft.FontWeight.BOLD),
                 ft.Row([ft.Text("Enable RSS Fetch:"), ft.Switch(value=state.carousel_use_mastodon, on_change=update_carousel_mastodon)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.TextField(label="Server", value=state.carousel_mastodon_server, on_blur=update_carousel_server, text_size=12),
                 ft.TextField(label="Account", value=state.carousel_mastodon_account, on_blur=update_carousel_account, text_size=12),
                 ft.TextField(label="Tag", value=state.carousel_mastodon_tag, on_blur=update_carousel_tag, text_size=12),
             ])
