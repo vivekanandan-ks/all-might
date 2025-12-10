@@ -170,10 +170,6 @@ def get_mastodon_feed(account, tag, limit=5, server="mstdn.social"):
             # Trim whitespace
             description = description.strip()
             
-            # --- Filtering Removed ---
-            # Previously filtered for """ content """. 
-            # Now returning full raw (cleaned) text as per user request.
-            
             if description:
                 feed_data.append({
                     "text": description,

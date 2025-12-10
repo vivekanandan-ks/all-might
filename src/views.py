@@ -273,7 +273,7 @@ class SongCard(GlassContainer):
             self.update_card_content()
 
     def update_card_content(self):
-        self.tooltip = self.custom_tooltip
+        self.tooltip = self.target_url
         self.padding = 15
         self.image_src = None # We will use a dedicated Image control, not a background
 
@@ -549,12 +549,12 @@ def get_home_view():
         q_tooltip_val = "Quote of the Day"
         q_click_handler = [None] # Mutable ref for click handler
 
-        if state.use_mastodon_quote and state.mastodon_quote_cache:
-             q_text_val = state.mastodon_quote_cache.get("text", "...")
-             link = state.mastodon_quote_cache.get("link", "")
-             if link:
-                 q_tooltip_val = f"Open on Mastodon: {link}"
-                 q_click_handler[0] = create_dynamic_card_click_handler(link)
+        # if state.use_mastodon_quote and state.mastodon_quote_cache:
+        #      q_text_val = state.mastodon_quote_cache.get("text", "...")
+        #      link = state.mastodon_quote_cache.get("link", "")
+        #      if link:
+        #          q_tooltip_val = f"Open on Mastodon: {link}"
+        #          q_click_handler[0] = create_dynamic_card_click_handler(link)
 
         # Controls that need updating
         q_text_control = ft.Text(
@@ -587,28 +587,23 @@ def get_home_view():
                 fetched = get_mastodon_quote(state.quote_mastodon_account, state.quote_mastodon_tag, server=state.quote_mastodon_server)
                 if fetched == {}:
                     # Fetched but filtered out everything (or empty feed)
-                    # Fallback to default random quote if cache was also empty/invalid?
-                    # Or keep cache? User said "just keep a random quote" if no content.
-                    # If we have cache, maybe we shouldn't wipe it unless it's stale?
-                    # But "just keep a random quote" implies showing the default.
-                    state.mastodon_quote_cache = None
+                    # Fallback to default random quote
                     q_text_control.value = quote_data["text"]
                     q_click_handler[0] = None
                     main_card.tooltip = "Quote of the Day"
                 elif fetched:
-                    # New valid data
-                    if fetched != state.mastodon_quote_cache:
-                        state.mastodon_quote_cache = fetched
-                        state.last_fetched_quote = fetched
-                        state.save_settings()
-                        
-                        q_text_control.value = fetched.get("text", "...")
-                        link = fetched.get("link", "")
-                        if link:
-                            main_card.tooltip = f"Open on Mastodon: {link}"
-                            q_click_handler[0] = create_dynamic_card_click_handler(link)
+                    # New valid data - Always update UI, don't cache
+                    # state.mastodon_quote_cache = fetched
+                    # state.last_fetched_quote = fetched
+                    # state.save_settings()
+                    
+                    q_text_control.value = fetched.get("text", "...")
+                    link = fetched.get("link", "")
+                    if link:
+                        main_card.tooltip = f"Open on Mastodon: {link}"
+                        q_click_handler[0] = create_dynamic_card_click_handler(link)
                 
-                # If fetch failed (None), keep existing (cache or default)
+                # If fetch failed (None), keep existing (default)
                 
                 if q_text_control.page:
                     q_text_control.update()
@@ -1267,6 +1262,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
 
                 if card_key == "quote":
                     state.use_mastodon_quote = True
+                    state.quote_mastodon_server = "mstdn.social"
                     state.quote_mastodon_account = "vivekanandanks"
                     state.quote_mastodon_tag = "mha"
                     state.quote_style_italic = True
@@ -1275,24 +1271,28 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 
                 if card_key == "app":
                     state.app_use_mastodon = False
+                    state.app_mastodon_server = "mstdn.social"
                     state.app_mastodon_account = ""
                     state.app_mastodon_tag = ""
                     state.app_mastodon_cache = None
 
                 if card_key == "tip":
                     state.tip_use_mastodon = False
+                    state.tip_mastodon_server = "mstdn.social"
                     state.tip_mastodon_account = ""
                     state.tip_mastodon_tag = ""
                     state.tip_mastodon_cache = None
 
                 if card_key == "song":
                     state.song_use_mastodon = False
+                    state.song_mastodon_server = "mstdn.social"
                     state.song_mastodon_account = ""
                     state.song_mastodon_tag = ""
                     state.song_mastodon_cache = None
 
                 if card_key == "carousel":
                     state.carousel_use_mastodon = True
+                    state.carousel_mastodon_server = "mstdn.social"
                     state.carousel_mastodon_account = ""
                     state.carousel_mastodon_tag = ""
                     state.carousel_mastodon_cache = None
