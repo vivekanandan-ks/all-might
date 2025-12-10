@@ -72,8 +72,8 @@ COLOR_NAME_MAP = {
 # Default Configuration for Cards
 CARD_DEFAULTS = {
     "app": {"visible": True, "h": 180, "w": 0, "align": "left", "color": "indigo"},
-    "quote": {"visible": True, "h": 130, "w": 0, "align": "center", "color": "red"},
+    "quote": {"visible": True, "h": 180, "w": 0, "align": "center", "color": "red"},
     "tip": {"visible": True, "h": 180, "w": 0, "align": "left", "color": "teal"},
-    "song": {"visible": True, "h": 130, "w": 0, "align": "center", "color": "amber"},
+    "song": {"visible": True, "h": 180, "w": 0, "align": "center", "color": "amber"},
     "carousel": {"visible": True, "h": 160, "w": 0, "align": "left", "color": "blue"},
 }

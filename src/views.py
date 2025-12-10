@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import time
 import datetime
+import re
 from utils import get_mastodon_quote, get_mastodon_feed, fetch_opengraph_data
 
 def get_search_view(perform_search, channel_dropdown, search_field, search_icon_btn, results_column, result_count_text, filter_badge_container, toggle_filter_menu, refresh_callback=None):
@@ -226,12 +227,10 @@ class SongCard(GlassContainer):
         self.update_card_content()
 
     def initialize_state(self):
+        self.mastodon_url = ""
         if state.song_use_mastodon:
             if state.song_mastodon_cache:
-                self.title_text = state.song_mastodon_cache.get("text", "...").split("\n")[0]
-                self.artist_text = state.song_mastodon_cache.get("author", "")
-                self.target_url = state.song_mastodon_cache.get("link", "")
-                self.custom_tooltip = f"Open in browser: {self.target_url}"
+                self.apply_cache_data(state.song_mastodon_cache)
         else:
             self.target_url = self.default_url
             self.custom_tooltip = f"Open in browser: {self.target_url}"
@@ -260,17 +259,39 @@ class SongCard(GlassContainer):
             self.update_card_content()
 
     def fetch_mastodon_meta(self):
+        if state.song_mastodon_cache:
+            self.apply_cache_data(state.song_mastodon_cache)
+            return
+
         fetched = get_mastodon_quote(state.song_mastodon_account, state.song_mastodon_tag)
         if fetched:
+            # Parse Song Link
+            text = fetched.get("text", "")
+            url_match = re.search(r'(https?://\S+)', text)
+            if url_match:
+                song_url = url_match.group(1)
+                og_data = fetch_opengraph_data(song_url)
+                if og_data:
+                    fetched['title'] = og_data.get('title')
+                    fetched['image'] = og_data.get('image')
+                    fetched['song_url'] = song_url
+            
+            fetched['mastodon_link'] = fetched.get('link')
             fetched['fetched_at'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             state.song_mastodon_cache = fetched
             state.last_fetched_song = fetched
             state.save_settings()
-            self.title_text = fetched.get("text", "...").split("\n")[0]
-            self.artist_text = fetched.get("author", "")
-            self.target_url = fetched.get("link", "")
-            self.custom_tooltip = f"Open in browser: {self.target_url}"
-            self.update_card_content()
+            
+            self.apply_cache_data(fetched)
+
+    def apply_cache_data(self, data):
+        self.title_text = data.get("title", data.get("text", "...").split("\n")[0])
+        self.artist_text = data.get("author", "")
+        self.target_url = data.get("song_url", data.get("link", ""))
+        self.mastodon_url = data.get("mastodon_link", data.get("link", ""))
+        self.bg_image = data.get("image")
+        self.custom_tooltip = f"Song: {self.target_url}"
+        self.update_card_content()
 
     def update_card_content(self):
         self.tooltip = self.target_url
@@ -291,24 +312,28 @@ class SongCard(GlassContainer):
 
         text_content = ft.Column(
             [
-                ft.Text("Song of the Day", size=10, color="onSurfaceVariant", weight=ft.FontWeight.BOLD),
                 ft.Text(self.title_text, size=16, color="onSurface", weight=ft.FontWeight.BOLD, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
-                ft.Text(self.artist_text, size=12, color="onSurfaceVariant")
             ],
-            spacing=5,
             alignment=ft.MainAxisAlignment.CENTER,
             horizontal_alignment=ft.CrossAxisAlignment.START,
             expand=True
         )
 
-        self.content = ft.Row(
+        self.content = ft.Column(
             [
-                thumbnail_control,
-                text_content
+                ft.Row([ft.Text("Song of the Day", size=12, color="onSurfaceVariant", weight=ft.FontWeight.BOLD)]),
+                ft.Container(height=5),
+                ft.Row(
+                    [
+                        thumbnail_control,
+                        text_content
+                    ],
+                    spacing=15,
+                    alignment=ft.MainAxisAlignment.START,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER
+                )
             ],
-            spacing=15,
-            alignment=ft.MainAxisAlignment.START,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER
+            alignment=ft.MainAxisAlignment.CENTER
         )
         
         if self.page: self.update()
@@ -318,13 +343,13 @@ class SongCard(GlassContainer):
 
         close_func = [None]
 
-        def copy_link(e):
-            e.page.set_clipboard(self.target_url)
-            if controls_mod.show_toast_global:
-                 controls_mod.show_toast_global("Link copied to clipboard")
-
-        def open_link(e):
+        def open_song(e):
             e.page.launch_url(self.target_url)
+            if close_func[0]: close_func[0]()
+
+        def open_mastodon(e):
+            if self.mastodon_url:
+                e.page.launch_url(self.mastodon_url)
             if close_func[0]: close_func[0]()
 
         def refresh_meta(e):
@@ -332,40 +357,14 @@ class SongCard(GlassContainer):
             if controls_mod.show_toast_global:
                 controls_mod.show_toast_global("Refetching song data...")
             
-            def run_fetch():
-                if state.song_use_mastodon:
-                     fetched = get_mastodon_quote(state.song_mastodon_account, state.song_mastodon_tag)
-                     if fetched and fetched.get("text"):
-                        fetched['fetched_at'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        state.song_mastodon_cache = fetched
-                        state.last_fetched_song = fetched
-                        state.save_settings()
-                        self.title_text = fetched.get("text", "...").split("\n")[0]
-                        self.artist_text = fetched.get("author", "")
-                        self.target_url = fetched.get("link", "")
-                        if controls_mod.show_toast_global:
-                            controls_mod.show_toast_global("Song data refreshed")
-                     else:
-                        if controls_mod.show_toast_global:
-                            controls_mod.show_toast_global("Refetch failed, keeping old data")
-                else:
-                     data = fetch_opengraph_data(self.default_url)
-                     if data and data.get("title"):
-                        data['fetched_at'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        state.default_song_cache = data
-                        state.save_settings()
-                        self.title_text = data.get("title", "Song of the Day")
-                        self.artist_text = "All-Might Pick"
-                        self.bg_image = data.get("image")
-                        if controls_mod.show_toast_global:
-                            controls_mod.show_toast_global("Song data refreshed")
-                     else:
-                        if controls_mod.show_toast_global:
-                            controls_mod.show_toast_global("Refetch failed, keeping old data")
-                
-                self.update_card_content()
-
-            threading.Thread(target=run_fetch, daemon=True).start()
+            # Clear cache to force fetch
+            state.song_mastodon_cache = None
+            
+            # Reuse the fetch method
+            if state.song_use_mastodon:
+                 threading.Thread(target=self.fetch_mastodon_meta, daemon=True).start()
+            else:
+                 threading.Thread(target=self.fetch_default_meta, daemon=True).start()
 
         # Get fetched time
         fetched_at = "Unknown"
@@ -374,23 +373,34 @@ class SongCard(GlassContainer):
         elif not state.song_use_mastodon and state.default_song_cache:
             fetched_at = state.default_song_cache.get('fetched_at', 'Unknown')
 
+        def copy_text(e, text):
+            e.page.set_clipboard(text)
+            if controls_mod.show_toast_global:
+                 controls_mod.show_toast_global("Copied to clipboard")
+
         dlg_content = ft.Column([
-            ft.Text("Do you want to open this song link in your browser?", color="onSurface"),
+            ft.Text("Select a Link to Open", color="onSurface", weight=ft.FontWeight.BOLD),
             ft.Container(height=10),
-            ft.Text(self.target_url, size=12, color="blue", selectable=True, italic=True),
+            ft.Row([
+                ft.ElevatedButton("Open Song Link", icon=ft.Icons.MUSIC_NOTE, on_click=open_song, width=220, tooltip=self.target_url),
+                ft.IconButton(ft.Icons.COPY, tooltip="Copy Song Link", on_click=lambda e: copy_text(e, self.target_url))
+            ], alignment=ft.MainAxisAlignment.CENTER),
             ft.Container(height=5),
+            ft.Row([
+                ft.ElevatedButton("Open Mastodon Post", icon=ft.Icons.FORUM, on_click=open_mastodon, width=220, disabled=not self.mastodon_url, tooltip=self.mastodon_url),
+                 ft.IconButton(ft.Icons.COPY, tooltip="Copy Mastodon Link", on_click=lambda e: copy_text(e, self.mastodon_url), disabled=not self.mastodon_url)
+            ], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Container(height=10),
             ft.Text(f"Cached: {fetched_at}", size=10, color="onSurfaceVariant", italic=True)
-        ], tight=True)
+        ], tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
 
         actions = [
             ft.IconButton(ft.Icons.REFRESH, tooltip="Refresh Metadata", on_click=refresh_meta),
-            ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=copy_link),
-            ft.TextButton("No", on_click=lambda e: close_func[0]()),
-            ft.ElevatedButton("Yes", on_click=open_link, bgcolor=ft.Colors.GREEN, color=ft.Colors.WHITE, icon=ft.Icons.CHECK),
+            ft.TextButton("Close", on_click=lambda e: close_func[0]()),
         ]
 
         if controls_mod.show_glass_dialog:
-             close_func[0] = controls_mod.show_glass_dialog("Open Link?", dlg_content, actions)
+             close_func[0] = controls_mod.show_glass_dialog("Link Options", dlg_content, actions)
 
 def get_home_view():
     state.update_daily_indices()
@@ -421,8 +431,8 @@ def get_home_view():
 
             close_dialog = [None]
 
-            def copy_link(e):
-                e.page.set_clipboard(link)
+            def copy_link(e, text_to_copy):
+                e.page.set_clipboard(text_to_copy)
                 if controls_mod.show_toast_global:
                     controls_mod.show_toast_global("Link copied to clipboard")
 
@@ -431,19 +441,23 @@ def get_home_view():
                 if close_dialog[0]:
                     close_dialog[0]()
             
-            actions = [
-                ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=copy_link),
-                ft.TextButton("No", on_click=lambda e: close_dialog[0]()),
-                ft.ElevatedButton("Yes", on_click=open_link, bgcolor=ft.Colors.GREEN, color=ft.Colors.WHITE, icon=ft.Icons.CHECK),
-            ]
+            # For general dynamic cards, we might only have one link (Mastodon or content)
+            # So we show "Open Link" (which is usually the mastodon post or the link in it)
             
             dlg_content = ft.Column([
-                ft.Text("Do you want to open this Mastodon post in your browser?", color="onSurface"),
+                ft.Text("Select a Link to Open", color="onSurface", weight=ft.FontWeight.BOLD),
                 ft.Container(height=10),
-                ft.Text(link, size=12, color="blue", selectable=True, italic=True)
-            ], tight=True)
+                ft.Row([
+                     ft.ElevatedButton("Open Link", icon=ft.Icons.OPEN_IN_BROWSER, on_click=open_link, width=220, tooltip=link),
+                     ft.IconButton(ft.Icons.COPY, tooltip="Copy Link", on_click=lambda e: copy_link(e, link))
+                ], alignment=ft.MainAxisAlignment.CENTER),
+            ], tight=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
 
-            close_dialog[0] = controls_mod.show_glass_dialog("Open Link?", dlg_content, actions)
+            actions = [
+                ft.TextButton("Close", on_click=lambda e: close_dialog[0]()),
+            ]
+
+            close_dialog[0] = controls_mod.show_glass_dialog("Link Options", dlg_content, actions)
         return handler
 
     # Build App Card
@@ -549,12 +563,12 @@ def get_home_view():
         q_tooltip_val = "Quote of the Day"
         q_click_handler = [None] # Mutable ref for click handler
 
-        # if state.use_mastodon_quote and state.mastodon_quote_cache:
-        #      q_text_val = state.mastodon_quote_cache.get("text", "...")
-        #      link = state.mastodon_quote_cache.get("link", "")
-        #      if link:
-        #          q_tooltip_val = f"Open on Mastodon: {link}"
-        #          q_click_handler[0] = create_dynamic_card_click_handler(link)
+        if state.use_mastodon_quote and state.mastodon_quote_cache:
+             q_text_val = state.mastodon_quote_cache.get("text", "...")
+             link = state.mastodon_quote_cache.get("link", "")
+             if link:
+                 q_tooltip_val = f"Open on Mastodon: {link}"
+                 q_click_handler[0] = create_dynamic_card_click_handler(link)
 
         # Controls that need updating
         q_text_control = ft.Text(
@@ -572,10 +586,9 @@ def get_home_view():
             tooltip=q_tooltip_val,
             on_click=lambda e: q_click_handler[0](e) if q_click_handler[0] else None,
             content=ft.Column(
-                alignment=ft.MainAxisAlignment.CENTER,
                 controls=[
-                    ft.Row([ft.Text("Quote of the Day", size=10, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
-                    q_text_control,
+                    ft.Row([ft.Text("Quote of the Day", size=12, color=ft.Colors.WHITE70, weight=ft.FontWeight.BOLD)], alignment=get_alignment(cfg["align"])),
+                    ft.Container(expand=True, content=ft.Column([q_text_control], alignment=ft.MainAxisAlignment.CENTER))
                 ]
             )
         )
@@ -583,6 +596,10 @@ def get_home_view():
 
         # Background Fetch for Quote
         def fetch_fresh_quote():
+            # Check cache to avoid refetching on navigation
+            if state.mastodon_quote_cache:
+                return
+
             if state.use_mastodon_quote:
                 fetched = get_mastodon_quote(state.quote_mastodon_account, state.quote_mastodon_tag, server=state.quote_mastodon_server)
                 if fetched == {}:
@@ -592,10 +609,10 @@ def get_home_view():
                     q_click_handler[0] = None
                     main_card.tooltip = "Quote of the Day"
                 elif fetched:
-                    # New valid data - Always update UI, don't cache
-                    # state.mastodon_quote_cache = fetched
-                    # state.last_fetched_quote = fetched
-                    # state.save_settings()
+                    # New valid data
+                    state.mastodon_quote_cache = fetched
+                    state.last_fetched_quote = fetched
+                    state.save_settings()
                     
                     q_text_control.value = fetched.get("text", "...")
                     link = fetched.get("link", "")
