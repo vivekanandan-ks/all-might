@@ -127,14 +127,20 @@ def execute_nix_search(query, channel):
         print(f"Nix Search Failed: {e}")
         return [{"error": f"Execution Error: {str(e)}"}]
 
-def get_mastodon_feed(account, tag, limit=5):
+def get_mastodon_feed(account, tag, limit=5, server="mstdn.social"):
     clean_account = account.strip()
     clean_tag = tag.strip()
+    clean_server = server.strip() if server else "mstdn.social"
     
-    url = f"https://mstdn.social/@{clean_account}/tagged/{clean_tag}.rss"
+    url = f"https://{clean_server}/@{clean_account}/tagged/{clean_tag}.rss"
     
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+
     try:
-        with urllib.request.urlopen(url, timeout=10) as response:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as response:
             rss_content = response.read()
             
         root = ET.fromstring(rss_content)
@@ -176,7 +182,7 @@ def get_mastodon_feed(account, tag, limit=5):
 
     except Exception as e:
         print(f"Error fetching Mastodon feed: {e}")
-        return []
+        return None
 
 def fetch_opengraph_data(url):
 
@@ -220,8 +226,9 @@ def fetch_opengraph_data(url):
         print(f"Error fetching OpenGraph data: {e}")
         return None
 
-def get_mastodon_quote(account, tag):
-    feed = get_mastodon_feed(account, tag, limit=1)
-    if feed:
-        return feed[0]
-    return None
+def get_mastodon_quote(account, tag, server="mstdn.social"):
+    # Fetch more items to find one that matches the filter criteria
+    feed = get_mastodon_feed(account, tag, limit=10, server=server)
+    if feed is None: return None
+    if not feed: return {}
+    return feed[0]

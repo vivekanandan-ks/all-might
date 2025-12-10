@@ -80,6 +80,7 @@ class AppState:
 
         # Quote Settings
         self.use_mastodon_quote = True
+        self.quote_mastodon_server = "mstdn.social"
         self.quote_mastodon_account = "vivekanandanks"
         self.quote_mastodon_tag = "mha"
         self.quote_style_italic = True
@@ -89,6 +90,7 @@ class AppState:
 
         # App Settings
         self.app_use_mastodon = False
+        self.app_mastodon_server = "mstdn.social"
         self.app_mastodon_account = ""
         self.app_mastodon_tag = ""
         self.app_mastodon_cache = None
@@ -96,6 +98,7 @@ class AppState:
 
         # Tip Settings
         self.tip_use_mastodon = False
+        self.tip_mastodon_server = "mstdn.social"
         self.tip_mastodon_account = ""
         self.tip_mastodon_tag = ""
         self.tip_mastodon_cache = None
@@ -103,6 +106,7 @@ class AppState:
 
         # Song Settings
         self.song_use_mastodon = False
+        self.song_mastodon_server = "mstdn.social"
         self.song_mastodon_account = ""
         self.song_mastodon_tag = ""
         self.song_mastodon_cache = None
@@ -111,6 +115,7 @@ class AppState:
 
         # Carousel Settings
         self.carousel_use_mastodon = True
+        self.carousel_mastodon_server = "mstdn.social"
         self.carousel_mastodon_account = ""
         self.carousel_mastodon_tag = ""
         self.carousel_mastodon_cache = None
@@ -229,6 +234,9 @@ class AppState:
                             if k not in saved_card_config:
                                 saved_card_config[k] = v
                             else:
+                                # Ensure 'h' and 'color' keys exist, using defaults if not
+                                if 'h' not in saved_card_config[k]:
+                                    saved_card_config[k]['h'] = v.get('h', 180)
                                 if "color" not in saved_card_config[k]:
                                     saved_card_config[k]["color"] = v["color"]
                         self.home_card_config = saved_card_config
@@ -239,33 +247,49 @@ class AppState:
                         if "home_show_tip" in data: self.home_card_config["tip"]["visible"] = data["home_show_tip"]
                         if "home_show_song" in data: self.home_card_config["song"]["visible"] = data["home_show_song"]
 
+                    # Equalize card heights as per user request
+                    if self.home_card_config:
+                        app_h = self.home_card_config.get("app", {}).get("h", 180)
+                        tip_h = self.home_card_config.get("tip", {}).get("h", 180)
+                        target_h = max(app_h, tip_h)
+                        if "quote" in self.home_card_config:
+                            self.home_card_config["quote"]["h"] = target_h
+                        if "song" in self.home_card_config:
+                            self.home_card_config["song"]["h"] = target_h
+
+
                     self.use_mastodon_quote = data.get("use_mastodon_quote", True)
+                    self.quote_mastodon_server = data.get("quote_mastodon_server", "mstdn.social")
                     self.quote_mastodon_account = data.get("quote_mastodon_account", "vivekanandanks")
                     self.quote_mastodon_tag = data.get("quote_mastodon_tag", "mha")
                     self.quote_style_italic = data.get("quote_style_italic", True)
                     self.quote_style_bold = data.get("quote_style_bold", True)
-                    self.last_fetched_quote = data.get("last_fetched_quote", None)
+                    # self.last_fetched_quote = data.get("last_fetched_quote", None)
 
                     self.app_use_mastodon = data.get("app_use_mastodon", False)
+                    self.app_mastodon_server = data.get("app_mastodon_server", "mstdn.social")
                     self.app_mastodon_account = data.get("app_mastodon_account", "")
                     self.app_mastodon_tag = data.get("app_mastodon_tag", "")
-                    self.last_fetched_app = data.get("last_fetched_app", None)
+                    # self.last_fetched_app = data.get("last_fetched_app", None)
 
                     self.tip_use_mastodon = data.get("tip_use_mastodon", False)
+                    self.tip_mastodon_server = data.get("tip_mastodon_server", "mstdn.social")
                     self.tip_mastodon_account = data.get("tip_mastodon_account", "")
                     self.tip_mastodon_tag = data.get("tip_mastodon_tag", "")
-                    self.last_fetched_tip = data.get("last_fetched_tip", None)
+                    # self.last_fetched_tip = data.get("last_fetched_tip", None)
 
                     self.song_use_mastodon = data.get("song_use_mastodon", False)
+                    self.song_mastodon_server = data.get("song_mastodon_server", "mstdn.social")
                     self.song_mastodon_account = data.get("song_mastodon_account", "")
                     self.song_mastodon_tag = data.get("song_mastodon_tag", "")
-                    self.last_fetched_song = data.get("last_fetched_song", None)
-                    self.default_song_cache = data.get("default_song_cache", None)
+                    # self.last_fetched_song = data.get("last_fetched_song", None)
+                    # self.default_song_cache = data.get("default_song_cache", None)
 
                     self.carousel_use_mastodon = data.get("carousel_use_mastodon", True)
+                    self.carousel_mastodon_server = data.get("carousel_mastodon_server", "mstdn.social")
                     self.carousel_mastodon_account = data.get("carousel_mastodon_account", "")
                     self.carousel_mastodon_tag = data.get("carousel_mastodon_tag", "")
-                    self.last_fetched_carousel = data.get("last_fetched_carousel", None)
+                    # self.last_fetched_carousel = data.get("last_fetched_carousel", None)
 
                     self.auto_refresh_ui = data.get("auto_refresh_ui", False)
                     self.auto_refresh_interval = data.get("auto_refresh_interval", 10)
@@ -341,6 +365,7 @@ class AppState:
 
                 "home_card_config": self.home_card_config,
                 "use_mastodon_quote": self.use_mastodon_quote,
+                "quote_mastodon_server": self.quote_mastodon_server,
                 "quote_mastodon_account": self.quote_mastodon_account,
                 "quote_mastodon_tag": self.quote_mastodon_tag,
                 "quote_style_italic": self.quote_style_italic,
@@ -348,22 +373,26 @@ class AppState:
                 "last_fetched_quote": self.last_fetched_quote,
 
                 "app_use_mastodon": self.app_use_mastodon,
+                "app_mastodon_server": self.app_mastodon_server,
                 "app_mastodon_account": self.app_mastodon_account,
                 "app_mastodon_tag": self.app_mastodon_tag,
                 "last_fetched_app": self.last_fetched_app,
 
                 "tip_use_mastodon": self.tip_use_mastodon,
+                "tip_mastodon_server": self.tip_mastodon_server,
                 "tip_mastodon_account": self.tip_mastodon_account,
                 "tip_mastodon_tag": self.tip_mastodon_tag,
                 "last_fetched_tip": self.last_fetched_tip,
 
                 "song_use_mastodon": self.song_use_mastodon,
+                "song_mastodon_server": self.song_mastodon_server,
                 "song_mastodon_account": self.song_mastodon_account,
                 "song_mastodon_tag": self.song_mastodon_tag,
                 "last_fetched_song": self.last_fetched_song,
                 "default_song_cache": self.default_song_cache,
 
                 "carousel_use_mastodon": self.carousel_use_mastodon,
+                "carousel_mastodon_server": self.carousel_mastodon_server,
                 "carousel_mastodon_account": self.carousel_mastodon_account,
                 "carousel_mastodon_tag": self.carousel_mastodon_tag,
                 "last_fetched_carousel": self.last_fetched_carousel,
