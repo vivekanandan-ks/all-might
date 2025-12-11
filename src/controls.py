@@ -148,7 +148,7 @@ class UndoToast(ft.Container):
             self.on_undo()
 
 class DelayedActionToast(ft.Container):
-    def __init__(self, message, on_execute, duration_seconds=5, on_cancel=None):
+    def __init__(self, message, on_execute, duration_seconds=5, on_cancel=None, cancel_text="CANCEL", immediate_action_text=None, immediate_action_icon=None):
         self.duration_seconds = duration_seconds
         self.on_execute = on_execute
         self.on_cancel = on_cancel
@@ -157,25 +157,46 @@ class DelayedActionToast(ft.Container):
         self.counter_text = ft.Text(str(duration_seconds), size=text_sz*0.85, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE)
         self.progress_ring = ft.ProgressRing(value=1.0, stroke_width=3, color=ft.Colors.WHITE, width=24, height=24)
 
+        actions_row = [
+            ft.TextButton(
+                content=ft.Row([ft.Icon(ft.Icons.CANCEL if cancel_text=="CANCEL" else ft.Icons.CHECK, size=text_sz*1.2), ft.Text(cancel_text, weight=ft.FontWeight.BOLD, size=text_sz)], spacing=5),
+                style=ft.ButtonStyle(color=ft.Colors.RED_200 if cancel_text=="CANCEL" else ft.Colors.GREEN_200),
+                on_click=self.handle_cancel
+            )
+        ]
+
+        if immediate_action_text:
+            icon_to_use = immediate_action_icon if immediate_action_icon else ft.Icons.RESTORE
+            actions_row.insert(0, ft.TextButton(
+                content=ft.Row([ft.Icon(icon_to_use, size=text_sz*1.2), ft.Text(immediate_action_text, weight=ft.FontWeight.BOLD, size=text_sz)], spacing=5),
+                style=ft.ButtonStyle(color=ft.Colors.BLUE_200),
+                on_click=self.handle_immediate
+            ))
+        elif immediate_action_icon:
+            actions_row.insert(0, ft.IconButton(
+                icon=immediate_action_icon,
+                icon_color=ft.Colors.BLUE_200,
+                icon_size=text_sz*1.4,
+                tooltip="Execute Immediately",
+                on_click=self.handle_immediate
+            ))
+
         content = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
                 ft.Row(
-                    spacing=15,
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     controls=[
+                        ft.Text(message, color=ft.Colors.WHITE, weight=ft.FontWeight.W_500, size=text_sz),
                         ft.Stack([
                             self.progress_ring,
                             ft.Container(content=self.counter_text, alignment=ft.alignment.center, width=24, height=24)
-                        ]),
-                        ft.Text(message, color=ft.Colors.WHITE, weight=ft.FontWeight.W_500, size=text_sz)
+                        ])
                     ]
                 ),
-                ft.TextButton(
-                    content=ft.Row([ft.Icon(ft.Icons.CANCEL, size=text_sz*1.2), ft.Text("CANCEL", weight=ft.FontWeight.BOLD, size=text_sz)], spacing=5),
-                    style=ft.ButtonStyle(color=ft.Colors.RED_200),
-                    on_click=self.handle_cancel
-                )
+                ft.Row(actions_row, spacing=0)
             ]
         )
         super().__init__(
@@ -185,7 +206,7 @@ class DelayedActionToast(ft.Container):
             padding=ft.padding.symmetric(horizontal=20, vertical=12),
             border_radius=30,
             shadow=ft.BoxShadow(blur_radius=15, color=ft.Colors.with_opacity(0.5, ft.Colors.BLACK), offset=ft.Offset(0, 5)),
-            width=380,
+            width=550,
             animate_opacity=300,
         )
 
@@ -238,6 +259,16 @@ class DelayedActionToast(ft.Container):
         self.cancelled = True
         if self.on_cancel:
             self.on_cancel()
+        try:
+             self.visible = False
+             self.update()
+        except:
+             pass
+
+    def handle_immediate(self, e):
+        self.cancelled = True
+        if self.on_execute:
+            self.on_execute()
         try:
              self.visible = False
              self.update()

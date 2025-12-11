@@ -14,7 +14,7 @@ import subprocess
 
 def main(page: ft.Page):
     page.title = APP_NAME
-    page.theme_mode = ft.ThemeMode.DARK if state.theme_mode == "dark" else (ft.ThemeMode.LIGHT if state.theme_mode == "light" else ft.ThemeMode.SYSTEM)
+    page.theme_mode = ft.ThemeMode.DARK # Enforce Dark Mode
     page.theme = ft.Theme(color_scheme_seed=state.theme_color)
     page.padding = 0
     page.window_width = 400
@@ -48,6 +48,78 @@ def main(page: ft.Page):
         global_menu_card.visible = False
         global_dismiss_layer.visible = False
         page.update()
+
+    # --- Background Image Handling ---
+    bg_image_control = ft.Container(expand=True)
+    
+    # Default Background (Gradient + Decorations)
+    default_bg_stack = ft.Stack(
+        expand=True,
+        controls=[
+            ft.Container(expand=True, gradient=ft.LinearGradient(begin=ft.alignment.top_left, end=ft.alignment.bottom_right, colors=["background", "surfaceVariant"])),
+            ft.Stack(controls=[
+                ft.Container(width=300, height=300, bgcolor="primary", border_radius=150, top=-100, right=-50, blur=ft.Blur(100, 100, ft.BlurTileMode.MIRROR), opacity=0.15),
+                ft.Container(width=200, height=200, bgcolor="tertiary", border_radius=100, bottom=100, left=-50, blur=ft.Blur(80, 80, ft.BlurTileMode.MIRROR), opacity=0.15)
+            ])
+        ]
+    )
+    
+    default_bg_container = ft.Container(content=default_bg_stack, expand=True)
+
+    def update_background_image():
+        blur_effect = None
+        if state.background_blur > 0:
+            blur_effect = ft.Blur(state.background_blur, state.background_blur, ft.BlurTileMode.MIRROR)
+        
+        # Use absolute positioning (left/top/right/bottom=0) to force layers to fill the Stack
+        blur_layer = ft.Container(blur=blur_effect, left=0, top=0, right=0, bottom=0) if blur_effect else None
+
+        if state.background_image:
+            # External Image
+            img_control = ft.Image(
+                src=state.background_image,
+                fit=ft.ImageFit.COVER,
+                opacity=state.background_opacity,
+                error_content=ft.Container(bgcolor=ft.Colors.BLACK),
+                left=0, top=0, right=0, bottom=0
+            )
+            
+            # Stack Image + Blur
+            stack_controls = [img_control]
+            if blur_layer:
+                stack_controls.append(blur_layer)
+            
+            bg_image_control.content = ft.Stack(controls=stack_controls, expand=True)
+            bg_image_control.blur = None 
+            
+            default_bg_container.visible = False
+        else:
+            # Default Background
+            bg_image_control.content = None
+            default_bg_container.visible = True
+            
+            # Apply Opacity (Brightness) to container
+            default_bg_container.opacity = state.background_opacity
+            
+            # Apply Blur: Add/Update Blur Layer in Default Stack
+            # Reset stack to base layers
+            default_bg_stack.controls = [
+                ft.Container(gradient=ft.LinearGradient(begin=ft.alignment.top_left, end=ft.alignment.bottom_right, colors=["background", "surfaceVariant"]), left=0, top=0, right=0, bottom=0),
+                ft.Stack(controls=[
+                    ft.Container(width=300, height=300, bgcolor="primary", border_radius=150, top=-100, right=-50, blur=ft.Blur(100, 100, ft.BlurTileMode.MIRROR), opacity=0.15),
+                    ft.Container(width=200, height=200, bgcolor="tertiary", border_radius=100, bottom=100, left=-50, blur=ft.Blur(80, 80, ft.BlurTileMode.MIRROR), opacity=0.15)
+                ])
+            ]
+            
+            if blur_layer:
+                default_bg_stack.controls.append(blur_layer)
+            
+            default_bg_container.blur = None # Ensure container blur is off
+
+        if bg_image_control.page: bg_image_control.update()
+        if default_bg_container.page: default_bg_container.update()
+
+    update_background_image() # Initial set
 
     def show_glass_menu(e, content_controls, width=200):
         # Fallback if global_x not present (e.g. some events might differ)
@@ -263,10 +335,10 @@ def main(page: ft.Page):
     controls.show_toast_global = show_toast
     controls.show_undo_toast_global = show_undo_toast
 
-    def show_delayed_toast(message, on_execute, on_cancel=None):
+    def show_delayed_toast(message, on_execute, duration=None, on_cancel=None, cancel_text="CANCEL", immediate_action_text=None, immediate_action_icon=None):
         current_toast_token[0] += 1
         my_token = current_toast_token[0]
-        delay_duration = state.undo_timer # Re-use undo timer preference
+        delay_duration = duration if duration is not None else state.undo_timer
 
         def wrapped_execute():
             if current_toast_token[0] == my_token:
@@ -280,7 +352,7 @@ def main(page: ft.Page):
                 toast_overlay_container.visible = False
                 page.update()
 
-        delayed_control = DelayedActionToast(message, on_execute=wrapped_execute, on_cancel=wrapped_cancel, duration_seconds=delay_duration)
+        delayed_control = DelayedActionToast(message, on_execute=wrapped_execute, on_cancel=wrapped_cancel, duration_seconds=delay_duration, cancel_text=cancel_text, immediate_action_text=immediate_action_text, immediate_action_icon=immediate_action_icon)
         toast_overlay_container.content = delayed_control
         toast_overlay_container.visible = True
         page.update()
@@ -1211,29 +1283,14 @@ def main(page: ft.Page):
         elif idx == 4:
             content_area.content = get_installed_view(page, on_global_cart_change, show_toast, global_refresh_action)
         elif idx == 5:
-            content_area.content = get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toast, show_destructive_dialog, refresh_dropdown_options, update_badges_style)
+            content_area.content = get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toast, show_destructive_dialog, refresh_dropdown_options, update_badges_style, update_background_image)
         content_area.update()
 
     def auto_refresh_loop():
         while True:
             if state.auto_refresh_ui:
                 try:
-                    # Run refresh logic
-                    # Note: Flet page updates must be thread-safe or scheduled? 
-                    # Typically page.update is not thread safe directly if modifying controls.
-                    # But here we just call global_refresh_action which rebuilds content.
-                    # We shouldn't call it directly from thread.
-                    # However, state update is safe. 
                     state.refresh_installed_cache()
-                    # We can assume state is updated. Re-rendering is the hard part.
-                    # If we want to force update UI, we need to signal main thread.
-                    # For now, let's just update cache. The UI will update on next interaction or manual refresh.
-                    # User asked "update the UI... continuously".
-                    # We can try `page.run_task` if available, or just accept cache update.
-                    # Or simply rely on user clicking refresh if they want visuals.
-                    # Actually user said: "make an option... to update the UI... continuously".
-                    # So I should try to trigger it.
-                    pass 
                 except:
                     pass
             time.sleep(max(1, state.auto_refresh_interval))
@@ -1247,13 +1304,81 @@ def main(page: ft.Page):
 
     nav_bar = build_custom_navbar(on_nav_change, current_nav_idx)
 
-    background = ft.Container(expand=True, gradient=ft.LinearGradient(begin=ft.alignment.top_left, end=ft.alignment.bottom_right, colors=["background", "surfaceVariant"]))
-    decorations = ft.Stack(controls=[
-        ft.Container(width=300, height=300, bgcolor="primary", border_radius=150, top=-100, right=-50, blur=ft.Blur(100, 100, ft.BlurTileMode.MIRROR), opacity=0.15),
-        ft.Container(width=200, height=200, bgcolor="tertiary", border_radius=100, bottom=100, left=-50, blur=ft.Blur(80, 80, ft.BlurTileMode.MIRROR), opacity=0.15)
-    ])
+    # Initialize Rotation
+    bg_image_control.rotate = ft.Rotate(0, alignment=ft.alignment.center)
+    bg_image_control.scale = ft.Scale(1)
+    default_bg_container.rotate = ft.Rotate(0, alignment=ft.alignment.center)
+    default_bg_container.scale = ft.Scale(1)
 
-    page.add(ft.Stack(expand=True, alignment=ft.alignment.bottom_center, controls=[background, decorations, content_area, nav_bar, global_dismiss_layer, global_menu_card, filter_dismiss_layer, filter_menu, toast_overlay_container, custom_dialog_overlay]))
+    def rotation_loop():
+        angle = 0.0
+        while True:
+            if state.bg_rotation:
+                angle += state.bg_rotation_speed
+                if angle >= 360: angle -= 360
+                
+                rad = angle * 3.14159 / 180.0
+                
+                scale_val = state.bg_rotation_scale
+                
+                # Apply to both
+                bg_image_control.rotate.angle = rad
+                bg_image_control.scale.scale = scale_val
+                
+                default_bg_container.rotate.angle = rad
+                default_bg_container.scale.scale = scale_val
+                
+                try:
+                    if bg_image_control.page and bg_image_control.visible:
+                        bg_image_control.update()
+                    if default_bg_container.page and default_bg_container.visible:
+                        default_bg_container.update()
+                except:
+                    pass
+                time.sleep(0.05)
+            else:
+                # Reset if needed
+                if bg_image_control.scale.scale != 1:
+                    bg_image_control.rotate.angle = 0
+                    bg_image_control.scale.scale = 1
+                    default_bg_container.rotate.angle = 0
+                    default_bg_container.scale.scale = 1
+                    try:
+                        if bg_image_control.page: bg_image_control.update()
+                        if default_bg_container.page: default_bg_container.update()
+                    except:
+                        pass
+                time.sleep(1.0)
+
+    threading.Thread(target=rotation_loop, daemon=True).start()
+
+    # Main Page Layout
+    # Use a Stack to layer background, main content, and floating nav/overlays
+    page.add(
+        ft.Stack(
+            controls=[
+                default_bg_container,
+                bg_image_control,
+                content_area,
+                ft.Container(
+                    content=nav_bar,
+                    alignment=ft.alignment.bottom_center,
+                    bottom=0, left=0, right=0
+                ),
+                global_dismiss_layer,
+                global_menu_card,
+                filter_dismiss_layer,
+                filter_menu,
+                toast_overlay_container,
+                custom_dialog_overlay
+            ],
+            expand=True,
+            alignment=ft.alignment.bottom_center
+        )
+    )
+
+    # Initial Route
+    on_nav_change(0)
 
 if __name__ == "__main__":
     ft.app(target=main)

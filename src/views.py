@@ -11,6 +11,14 @@ import datetime
 import re
 from utils import get_mastodon_quote, get_mastodon_feed, fetch_opengraph_data
 
+class SettingsScrollColumn(ft.Column):
+    def did_mount(self):
+        if state.last_settings_scroll > 0:
+            try:
+                self.scroll_to(offset=state.last_settings_scroll, duration=0)
+            except Exception as e:
+                print(f"Scroll restore failed: {e}")
+
 def get_search_view(perform_search, channel_dropdown, search_field, search_icon_btn, results_column, result_count_text, filter_badge_container, toggle_filter_menu, refresh_callback=None):
     # channel_dropdown is now a GlassContainer pre-styled in main.py
     
@@ -641,20 +649,10 @@ def get_home_view():
     # --- Carousel Data Logic ---
     carousel_items = []
     
-    # Default/Fallback to Random Tips immediately (so UI doesn't block)
-    import random
-    tips_pool = list(DAILY_TIPS)
-    random.shuffle(tips_pool)
-    selected_tips = tips_pool[:5]
-    
-    colors = [ft.Colors.BLUE, ft.Colors.PURPLE, ft.Colors.ORANGE, ft.Colors.TEAL, ft.Colors.INDIGO]
-    for i, tip in enumerate(selected_tips):
-        carousel_items.append({
-            "title": tip.get("title", "Nix Tip"),
-            "desc": tip.get("code", ""),
-            "icon": ft.Icons.LIGHTBULB_OUTLINE,
-            "color": colors[i % len(colors)]
-        })
+    # Default to App Features (CAROUSEL_DATA)
+    # We copy to avoid modifying the constant if we were to mutate it
+    for item in CAROUSEL_DATA:
+        carousel_items.append(item.copy())
     
     # Use cached data if available
     if state.carousel_use_mastodon and state.carousel_mastodon_cache:
@@ -746,19 +744,23 @@ def get_home_view():
         )
     )
 
-def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toast, show_destructive_dialog, refresh_dropdown_options, update_badges_style):
-    settings_ui_state = {
-        "expanded_tile": None,
-        "selected_category": "appearance",
-        "scroll_offset": 0
-    }
+def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toast, show_destructive_dialog, refresh_dropdown_options, update_badges_style, update_bg_callback=None):
+    categories = ["appearance", "profile", "channels", "run_config", "home_config", "installed", "debug", "experimental"]
+    initial_cat_idx = state.last_settings_category
+    if initial_cat_idx < 0 or initial_cat_idx >= len(categories):
+        initial_cat_idx = 0
+    
     settings_scroll_ref = ft.Ref()
     settings_refresh_ref = [None]
-    settings_main_column = ft.Column(
+
+    def on_scroll_change(e):
+        state.last_settings_scroll = e.pixels
+
+    settings_main_column = SettingsScrollColumn(
         scroll=ft.ScrollMode.HIDDEN,
         expand=True,
         ref=settings_scroll_ref,
-        on_scroll=lambda e: settings_ui_state.update({"scroll_offset": e.pixels}),
+        on_scroll=on_scroll_change,
         on_scroll_interval=10,
     )
 
@@ -1537,25 +1539,143 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 ])
             ]
         elif category == "appearance":
-            theme_mode_segment = ft.SegmentedButton(
-                selected={state.theme_mode},
-                on_change=lambda e: change_theme(e.control.selected.pop()),
-                segments=[
-                    ft.Segment(value="light", label=ft.Text("Light"), icon=ft.Icon(ft.Icons.LIGHT_MODE)),
-                    ft.Segment(value="dark", label=ft.Text("Dark"), icon=ft.Icon(ft.Icons.DARK_MODE)),
-                ]
+            # Removed Theme Mode Segment per user request (Enforced Dark Mode)
+
+            # Background Image Controls
+            bg_image_input = ft.TextField(
+                value=state.background_image if state.background_image else "",
+                hint_text="URL or Local Path",
+                expand=True,
+                text_size=12,
+                content_padding=10,
+                filled=True,
+                bgcolor=ft.Colors.with_opacity(0.1, "onSurface")
             )
-            color_controls = []
-            for name, code in COLOR_NAME_MAP.items():
-                is_selected = (name == state.theme_color)
-                color_controls.append(
-                    ft.Container(
-                        width=40, height=40, border_radius=20, bgcolor=code,
-                        border=ft.border.all(2, "white") if is_selected else ft.border.all(2, ft.Colors.TRANSPARENT),
-                        on_click=lambda e, color_name=name: change_color_scheme(color_name),
-                        ink=True, tooltip=name.capitalize()
-                    )
-                )
+
+            def handle_bg_change_with_revert(new_bg, new_opacity=None, new_blur=None):
+                old_bg = state.background_image
+                old_opacity = state.background_opacity
+                old_blur = state.background_blur
+                
+                # Apply new
+                state.background_image = new_bg
+                if new_opacity is not None:
+                    state.background_opacity = new_opacity
+                if new_blur is not None:
+                    state.background_blur = new_blur
+                
+                state.save_settings()
+                if update_bg_callback: update_bg_callback()
+                if navbar_ref[0]: navbar_ref[0]()
+                page.update()
+
+                # Revert Logic
+                def revert_func():
+                    state.background_image = old_bg
+                    state.background_opacity = old_opacity
+                    state.background_blur = old_blur
+                    state.save_settings()
+                    
+                    bg_image_input.value = old_bg if old_bg else ""
+                    bg_opacity_slider.value = old_opacity * 100
+                    txt_bg_opacity.value = f"{int(old_opacity * 100)}%"
+                    bg_blur_slider.value = old_blur
+                    txt_bg_blur.value = f"{int(old_blur)} px"
+                    
+                    if update_bg_callback: update_bg_callback()
+                    if navbar_ref[0]: navbar_ref[0]()
+                    page.update()
+                    if show_toast: show_toast("Reverted background")
+
+                def keep_func():
+                    if show_toast: show_toast("Background kept")
+
+                # Show Revert Toast (15s)
+                if controls_mod.show_delayed_toast_global:
+                     controls_mod.show_delayed_toast_global("Reverting background in 15s...", revert_func, duration=15, cancel_text="KEEP", on_cancel=keep_func, immediate_action_text="REVERT")
+
+            def update_bg_image(e):
+                val = bg_image_input.value.strip()
+                new_bg = val if val else None
+                if new_bg != state.background_image:
+                    handle_bg_change_with_revert(new_bg)
+
+            bg_image_input.on_submit = update_bg_image
+            bg_image_input.on_blur = update_bg_image
+
+            def pick_bg_file(e: ft.FilePickerResultEvent):
+                if e.files:
+                    path = e.files[0].path
+                    bg_image_input.value = path
+                    handle_bg_change_with_revert(path)
+
+            bg_file_picker = ft.FilePicker(on_result=pick_bg_file)
+            if bg_file_picker not in page.overlay:
+                page.overlay.append(bg_file_picker)
+                page.update()
+
+            def clear_bg_image(e):
+                if state.background_image:
+                    bg_image_input.value = ""
+                    handle_bg_change_with_revert(None)
+
+            bg_image_row = ft.Row([
+                bg_image_input,
+                ft.IconButton(ft.Icons.IMAGE, tooltip="Select File", on_click=lambda _: bg_file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)),
+                ft.IconButton(ft.Icons.CLEAR, tooltip="Clear", on_click=clear_bg_image)
+            ])
+
+            # Brightness/Opacity Slider
+            txt_bg_opacity = ft.Text(f"{int(state.background_opacity * 100)}%", size=12, width=40)
+            def update_bg_opacity(e):
+                val = float(e.control.value)
+                state.background_opacity = val / 100.0
+                txt_bg_opacity.value = f"{int(val)}%"
+                txt_bg_opacity.update()
+                state.save_settings()
+                if update_bg_callback: update_bg_callback()
+            
+            bg_opacity_slider = ft.Slider(min=0, max=100, divisions=100, value=state.background_opacity * 100, label="{value}%", on_change=update_bg_opacity, expand=True)
+
+            # Blur Slider
+            txt_bg_blur = ft.Text(f"{int(state.background_blur)} px", size=12, width=40)
+            def update_bg_blur(e):
+                val = float(e.control.value)
+                state.background_blur = val
+                txt_bg_blur.value = f"{int(val)} px"
+                txt_bg_blur.update()
+                state.save_settings()
+                if update_bg_callback: update_bg_callback()
+
+            bg_blur_slider = ft.Slider(min=0, max=50, divisions=50, value=state.background_blur, label="{value}", on_change=update_bg_blur, expand=True)
+
+            # Rotation
+            txt_bg_rot_speed = ft.Text(f"{state.bg_rotation_speed}x", size=12, width=40)
+            def update_bg_rot(e):
+                state.bg_rotation = e.control.value
+                state.save_settings()
+                if update_bg_callback: update_bg_callback()
+
+            def update_bg_rot_speed(e):
+                val = float(e.control.value)
+                state.bg_rotation_speed = val
+                txt_bg_rot_speed.value = f"{val}x"
+                txt_bg_rot_speed.update()
+                state.save_settings()
+                if update_bg_callback: update_bg_callback()
+            
+            bg_rot_speed_slider = ft.Slider(min=0.1, max=5.0, divisions=49, value=state.bg_rotation_speed, label="{value}x", on_change=update_bg_rot_speed, expand=True)
+
+            txt_bg_rot_scale = ft.Text(f"{state.bg_rotation_scale}x", size=12, width=40)
+            def update_bg_rot_scale(e):
+                val = float(e.control.value)
+                state.bg_rotation_scale = val
+                txt_bg_rot_scale.value = f"{val}x"
+                txt_bg_rot_scale.update()
+                state.save_settings()
+                if update_bg_callback: update_bg_callback()
+            
+            bg_rot_scale_slider = ft.Slider(min=1.0, max=3.0, divisions=20, value=state.bg_rotation_scale, label="{value}x", on_change=update_bg_rot_scale, expand=True)
 
             slider_global_radius = ft.Slider(min=0, max=50, value=state.global_radius, label="{value}", on_change=update_global_radius, on_change_end=save_and_refresh_fonts)
             slider_nav_radius = ft.Slider(min=0, max=50, value=state.nav_radius, label="{value}", on_change=update_nav_radius, on_change_end=save_and_refresh_fonts, disabled=state.sync_nav_radius)
@@ -1600,9 +1720,17 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
             controls_list = [
                 ft.Text("Appearance", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
                 make_settings_tile("Theme", [
-                    ft.Text("Mode:", weight=ft.FontWeight.BOLD), theme_mode_segment,
+                    ft.Text("Background Image:", weight=ft.FontWeight.BOLD), bg_image_row,
                     ft.Container(height=10),
-                    ft.Text("Accent Color:", weight=ft.FontWeight.BOLD), ft.Row(controls=color_controls, spacing=10)
+                    ft.Text("Background Brightness:", weight=ft.FontWeight.BOLD), 
+                    ft.Row([bg_opacity_slider, txt_bg_opacity], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Container(height=5),
+                    ft.Text("Background Blur:", weight=ft.FontWeight.BOLD), 
+                    ft.Row([bg_blur_slider, txt_bg_blur], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Container(height=5),
+                    ft.Row([ft.Text("Rotate Background:", weight=ft.FontWeight.BOLD), ft.Switch(value=state.bg_rotation, on_change=update_bg_rot)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Row([ft.Text("Speed:", size=12), bg_rot_speed_slider, txt_bg_rot_speed], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Row([ft.Text("Scale:", size=12), bg_rot_scale_slider, txt_bg_rot_scale], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ]),
                 ft.Container(height=10),
                 make_settings_tile("Radius", [
@@ -1828,18 +1956,18 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
         return controls_list
 
     def update_settings_view():
-        current_cat = settings_ui_state["selected_category"]
+        idx = state.last_settings_category
+        if idx < 0 or idx >= len(categories): idx = 0
+        current_cat = categories[idx]
+        
         settings_main_column.controls = get_settings_controls(current_cat)
 
         if settings_main_column.page:
-            if current_cat == "appearance" and settings_scroll_ref.current:
+            if settings_scroll_ref.current:
                 try:
-                    settings_scroll_ref.current.scroll_to(offset=settings_ui_state.get("scroll_offset", 0), duration=0)
+                    settings_scroll_ref.current.scroll_to(offset=state.last_settings_scroll, duration=0)
                 except:
                     pass
-            else:
-                if settings_scroll_ref.current:
-                    settings_scroll_ref.current.scroll_to(offset=0, duration=0)
 
             settings_main_column.update()
 
@@ -1857,12 +1985,13 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
 
     def on_settings_nav_change(e):
         idx = e.control.selected_index
-        categories = ["appearance", "profile", "channels", "run_config", "home_config", "installed", "debug", "experimental"]
-        settings_ui_state["selected_category"] = categories[idx]
+        state.last_settings_category = idx
+        state.last_settings_scroll = 0 # Reset scroll on category change
+        state.save_settings()
         update_settings_view()
     
     settings_nav_rail = ft.NavigationRail(
-        selected_index=0,
+        selected_index=initial_cat_idx,
         label_type=ft.NavigationRailLabelType.ALL,
         min_width=100,
         min_extended_width=200,
@@ -1907,6 +2036,13 @@ def make_settings_tile(title, controls, reset_func=None):
     
     expansion_controls.extend(controls)
 
+    def on_tile_change(e):
+        is_expanded_now = (e.data == "true")
+        state.last_settings_expanded[title] = is_expanded_now
+        state.save_settings()
+
+    is_expanded = state.last_settings_expanded.get(title, False)
+
     return ft.Container(
         border_radius=15,
         border=ft.border.all(1, "outline"),
@@ -1916,7 +2052,9 @@ def make_settings_tile(title, controls, reset_func=None):
             controls=[ft.Column(controls=expansion_controls, horizontal_alignment=ft.CrossAxisAlignment.START)],
             controls_padding=20,
             bgcolor=ft.Colors.TRANSPARENT,
-            collapsed_bgcolor=ft.Colors.TRANSPARENT
+            collapsed_bgcolor=ft.Colors.TRANSPARENT,
+            initially_expanded=is_expanded,
+            on_change=on_tile_change
         )
     )
 

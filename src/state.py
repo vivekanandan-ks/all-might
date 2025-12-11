@@ -21,8 +21,17 @@ class AppState:
 
         # New Features
         self.search_limit = 30
+        self.background_image = None
+        self.background_opacity = 0.15
+        self.background_blur = 0
+        self.bg_rotation = False
+        self.bg_rotation_speed = 0.5
+        self.bg_rotation_scale = 2.3
 
         # Nav Bar Settings
+        self.last_settings_category = 0
+        self.last_settings_scroll = 0
+        self.last_settings_expanded = {}
         self.floating_nav = True
         self.adaptive_nav = True
         self.glass_nav = True
@@ -175,7 +184,7 @@ class AppState:
                     data = json.load(f)
                     self.username = data.get("username", "user")
                     self.default_channel = data.get("default_channel", self.default_channel)
-                    self.theme_mode = data.get("theme_mode", "dark")
+                    self.theme_mode = "dark" # Enforce Dark Mode
                     self.theme_color = data.get("theme_color", "blue")
 
                     legacy_timer = data.get("countdown_timer", 5)
@@ -185,6 +194,15 @@ class AppState:
                     self.nav_badge_size = data.get("nav_badge_size", 20)
 
                     self.search_limit = data.get("search_limit", 30)
+                    self.background_image = data.get("background_image", None)
+                    self.background_opacity = data.get("background_opacity", 0.15)
+                    self.background_blur = data.get("background_blur", 0)
+                    self.bg_rotation = data.get("bg_rotation", False)
+                    self.bg_rotation_speed = data.get("bg_rotation_speed", 0.5)
+                    self.bg_rotation_scale = data.get("bg_rotation_scale", 2.3)
+                    self.last_settings_category = data.get("last_settings_category", 0)
+                    self.last_settings_scroll = data.get("last_settings_scroll", 0)
+                    self.last_settings_expanded = data.get("last_settings_expanded", {})
                     self.floating_nav = data.get("floating_nav", True)
                     self.adaptive_nav = data.get("adaptive_nav", True)
                     self.glass_nav = data.get("glass_nav", True)
@@ -338,6 +356,15 @@ class AppState:
                 "undo_timer": self.undo_timer,
                 "nav_badge_size": self.nav_badge_size,
                 "search_limit": self.search_limit,
+                "background_image": self.background_image,
+                "background_opacity": self.background_opacity,
+                "background_blur": self.background_blur,
+                "bg_rotation": self.bg_rotation,
+                "bg_rotation_speed": self.bg_rotation_speed,
+                "bg_rotation_scale": self.bg_rotation_scale,
+                "last_settings_category": self.last_settings_category,
+                "last_settings_scroll": self.last_settings_scroll,
+                "last_settings_expanded": self.last_settings_expanded,
 
                 "floating_nav": self.floating_nav,
                 "adaptive_nav": self.adaptive_nav,
@@ -406,105 +433,6 @@ class AppState:
                 "carousel_mastodon_account": self.carousel_mastodon_account,
                 "carousel_mastodon_tag": self.carousel_mastodon_tag,
                 "last_fetched_carousel": self.last_fetched_carousel,
-
-                "auto_refresh_ui": self.auto_refresh_ui,
-                "auto_refresh_interval": self.auto_refresh_interval,
-
-                "daily_indices": self.daily_indices,
-                "last_daily_date": self.last_daily_date,
-                "carousel_timer": self.carousel_timer,
-                "carousel_glass": self.carousel_glass,
-                "show_refresh_button": self.show_refresh_button,
-
-                "fetch_icons": self.fetch_icons,
-                "icon_size": self.icon_size,
-                "channel_selector_style": self.channel_selector_style,
-
-                "available_channels": self.available_channels,
-                "active_channels": self.active_channels,
-                "shell_single_prefix": self.shell_single_prefix,
-                "shell_single_suffix": self.shell_single_suffix,
-                "shell_cart_prefix": self.shell_cart_prefix,
-                "shell_cart_suffix": self.shell_cart_suffix,
-                "cart_items": self.cart_items,
-                "favourites": self.favourites,
-                "saved_lists": self.saved_lists,
-                "recent_activity": self.recent_activity
-            }
-            with open(CONFIG_FILE, 'w') as f:
-                json.dump(data, f, indent=4)
-        except Exception as e:
-            print(f"Error saving settings: {e}")
-
-    def save_settings(self):
-        try:
-            Path(CONFIG_DIR).mkdir(parents=True, exist_ok=True)
-            data = {
-                "username": self.username,
-                "default_channel": self.default_channel,
-                "theme_mode": self.theme_mode,
-                "theme_color": self.theme_color,
-                "confirm_timer": self.confirm_timer,
-                "undo_timer": self.undo_timer,
-                "nav_badge_size": self.nav_badge_size,
-                "search_limit": self.search_limit,
-
-                "floating_nav": self.floating_nav,
-                "adaptive_nav": self.adaptive_nav,
-                "glass_nav": self.glass_nav,
-                "nav_bar_height": self.nav_bar_height,
-                "nav_bar_width": self.nav_bar_width,
-                "nav_icon_spacing": self.nav_icon_spacing,
-                "sync_nav_spacing": self.sync_nav_spacing,
-
-                "global_radius": self.global_radius,
-                "nav_radius": self.nav_radius,
-                "sync_nav_radius": self.sync_nav_radius,
-                "card_radius": self.card_radius,
-                "sync_card_radius": self.sync_card_radius,
-                "button_radius": self.button_radius,
-                "sync_button_radius": self.sync_button_radius,
-                "search_radius": self.search_radius,
-                "sync_search_radius": self.sync_search_radius,
-                "selector_radius": self.selector_radius,
-                "sync_selector_radius": self.sync_selector_radius,
-                "footer_radius": self.footer_radius,
-                "sync_footer_radius": self.sync_footer_radius,
-                "chip_radius": self.chip_radius,
-                "sync_chip_radius": self.sync_chip_radius,
-
-                "global_font_size": self.global_font_size,
-                "title_font_size": self.title_font_size,
-                "sync_title_font": self.sync_title_font,
-                "body_font_size": self.body_font_size,
-                "sync_body_font": self.sync_body_font,
-                "small_font_size": self.small_font_size,
-                "sync_small_font": self.sync_small_font,
-                "nav_font_size": self.nav_font_size,
-                "sync_nav_font": self.sync_nav_font,
-
-                "home_card_config": self.home_card_config,
-                "use_mastodon_quote": self.use_mastodon_quote,
-                "quote_mastodon_account": self.quote_mastodon_account,
-                "quote_mastodon_tag": self.quote_mastodon_tag,
-                "quote_style_italic": self.quote_style_italic,
-                "quote_style_bold": self.quote_style_bold,
-                "last_fetched_quote": self.last_fetched_quote,
-
-                "app_use_mastodon": self.app_use_mastodon,
-                "app_mastodon_account": self.app_mastodon_account,
-                "app_mastodon_tag": self.app_mastodon_tag,
-                "last_fetched_app": self.last_fetched_app,
-
-                "tip_use_mastodon": self.tip_use_mastodon,
-                "tip_mastodon_account": self.tip_mastodon_account,
-                "tip_mastodon_tag": self.tip_mastodon_tag,
-                "last_fetched_tip": self.last_fetched_tip,
-
-                "song_use_mastodon": self.song_use_mastodon,
-                "song_mastodon_account": self.song_mastodon_account,
-                "song_mastodon_tag": self.song_mastodon_tag,
-                "last_fetched_song": self.last_fetched_song,
 
                 "auto_refresh_ui": self.auto_refresh_ui,
                 "auto_refresh_interval": self.auto_refresh_interval,
