@@ -11,6 +11,14 @@ import datetime
 import re
 from utils import get_mastodon_quote, get_mastodon_feed, fetch_opengraph_data
 
+class SettingsScrollColumn(ft.Column):
+    def did_mount(self):
+        if state.last_settings_scroll > 0:
+            try:
+                self.scroll_to(offset=state.last_settings_scroll, duration=0)
+            except Exception as e:
+                print(f"Scroll restore failed: {e}")
+
 def get_search_view(perform_search, channel_dropdown, search_field, search_icon_btn, results_column, result_count_text, filter_badge_container, toggle_filter_menu, refresh_callback=None):
     # channel_dropdown is now a GlassContainer pre-styled in main.py
     
@@ -752,18 +760,17 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
     if initial_cat_idx < 0 or initial_cat_idx >= len(categories):
         initial_cat_idx = 0
     
-    settings_ui_state = {
-        "expanded_tile": None,
-        "selected_category": categories[initial_cat_idx],
-        "scroll_offset": 0
-    }
     settings_scroll_ref = ft.Ref()
     settings_refresh_ref = [None]
-    settings_main_column = ft.Column(
+
+    def on_scroll_change(e):
+        state.last_settings_scroll = e.pixels
+
+    settings_main_column = SettingsScrollColumn(
         scroll=ft.ScrollMode.HIDDEN,
         expand=True,
         ref=settings_scroll_ref,
-        on_scroll=lambda e: settings_ui_state.update({"scroll_offset": e.pixels}),
+        on_scroll=on_scroll_change,
         on_scroll_interval=10,
     )
 
@@ -1959,18 +1966,18 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
         return controls_list
 
     def update_settings_view():
-        current_cat = settings_ui_state["selected_category"]
+        idx = state.last_settings_category
+        if idx < 0 or idx >= len(categories): idx = 0
+        current_cat = categories[idx]
+        
         settings_main_column.controls = get_settings_controls(current_cat)
 
         if settings_main_column.page:
-            if current_cat == "appearance" and settings_scroll_ref.current:
+            if settings_scroll_ref.current:
                 try:
-                    settings_scroll_ref.current.scroll_to(offset=settings_ui_state.get("scroll_offset", 0), duration=0)
+                    settings_scroll_ref.current.scroll_to(offset=state.last_settings_scroll, duration=0)
                 except:
                     pass
-            else:
-                if settings_scroll_ref.current:
-                    settings_scroll_ref.current.scroll_to(offset=0, duration=0)
 
             settings_main_column.update()
 
@@ -1989,9 +1996,8 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
     def on_settings_nav_change(e):
         idx = e.control.selected_index
         state.last_settings_category = idx
+        state.last_settings_scroll = 0 # Reset scroll on category change
         state.save_settings()
-        categories = ["appearance", "profile", "channels", "run_config", "home_config", "installed", "debug", "experimental"]
-        settings_ui_state["selected_category"] = categories[idx]
         update_settings_view()
     
     settings_nav_rail = ft.NavigationRail(
@@ -2040,6 +2046,13 @@ def make_settings_tile(title, controls, reset_func=None):
     
     expansion_controls.extend(controls)
 
+    def on_tile_change(e):
+        is_expanded_now = (e.data == "true")
+        state.last_settings_expanded[title] = is_expanded_now
+        state.save_settings()
+
+    is_expanded = state.last_settings_expanded.get(title, False)
+
     return ft.Container(
         border_radius=15,
         border=ft.border.all(1, "outline"),
@@ -2049,7 +2062,9 @@ def make_settings_tile(title, controls, reset_func=None):
             controls=[ft.Column(controls=expansion_controls, horizontal_alignment=ft.CrossAxisAlignment.START)],
             controls_padding=20,
             bgcolor=ft.Colors.TRANSPARENT,
-            collapsed_bgcolor=ft.Colors.TRANSPARENT
+            collapsed_bgcolor=ft.Colors.TRANSPARENT,
+            initially_expanded=is_expanded,
+            on_change=on_tile_change
         )
     )
 

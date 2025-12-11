@@ -26,10 +26,12 @@ class AppState:
         self.background_blur = 0
         self.bg_rotation = False
         self.bg_rotation_speed = 0.5
-        self.bg_rotation_scale = 2.0
+        self.bg_rotation_scale = 2.3
 
         # Nav Bar Settings
         self.last_settings_category = 0
+        self.last_settings_scroll = 0
+        self.last_settings_expanded = {}
         self.floating_nav = True
         self.adaptive_nav = True
         self.glass_nav = True
@@ -197,8 +199,10 @@ class AppState:
                     self.background_blur = data.get("background_blur", 0)
                     self.bg_rotation = data.get("bg_rotation", False)
                     self.bg_rotation_speed = data.get("bg_rotation_speed", 0.5)
-                    self.bg_rotation_scale = data.get("bg_rotation_scale", 2.0)
+                    self.bg_rotation_scale = data.get("bg_rotation_scale", 2.3)
                     self.last_settings_category = data.get("last_settings_category", 0)
+                    self.last_settings_scroll = data.get("last_settings_scroll", 0)
+                    self.last_settings_expanded = data.get("last_settings_expanded", {})
                     self.floating_nav = data.get("floating_nav", True)
                     self.adaptive_nav = data.get("adaptive_nav", True)
                     self.glass_nav = data.get("glass_nav", True)
@@ -359,6 +363,8 @@ class AppState:
                 "bg_rotation_speed": self.bg_rotation_speed,
                 "bg_rotation_scale": self.bg_rotation_scale,
                 "last_settings_category": self.last_settings_category,
+                "last_settings_scroll": self.last_settings_scroll,
+                "last_settings_expanded": self.last_settings_expanded,
 
                 "floating_nav": self.floating_nav,
                 "adaptive_nav": self.adaptive_nav,
