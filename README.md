@@ -6,8 +6,6 @@ nix develop -c python src/main.py
 
 # Screen recordings
 [recording_2x.webm](https://github.com/user-attachments/assets/86af7c0a-9fa4-4b18-9fa4-202921a9dc4e)
-[![Watch the video](screencaptures/screenshots/Screenshot_20251211_211938.png)](screencaptures/recording.webm?raw=true)
-Feel free to watch it in 2x speed.
 Source: `screencaptures/` folder
 
 # About this project: all-might
