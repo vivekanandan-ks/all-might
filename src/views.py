@@ -1793,13 +1793,32 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
             def update_icon_size(e):
                 state.icon_size = int(e.control.value)
                 state.save_settings()
+                txt_icon_size.value = f"Icon Size (Cur: {int(e.control.value)} | Def: 48)"
+                txt_icon_size.update()
+
+            def update_channel_selector_style(e):
+                state.channel_selector_style = e.control.selected.pop()
+                state.save_settings()
+
+            txt_icon_size = ft.Text(f"Icon Size (Cur: {state.icon_size} | Def: 48)")
 
             controls_list = [
                 ft.Text("Experimental Settings", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
-                make_settings_tile("Icon Fetching", [
+                make_settings_tile("UI Options", [
                     ft.Row([ft.Text("Fetch Icons for Search Results:"), ft.Switch(value=state.fetch_icons, on_change=update_fetch_icons)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                    ft.Text("Icon Size:"),
-                    ft.Slider(min=24, max=96, value=state.icon_size, label="{value}", on_change=update_icon_size)
+                    ft.Container(height=10),
+                    txt_icon_size,
+                    ft.Slider(min=24, max=96, value=state.icon_size, label="{value}", on_change=update_icon_size),
+                    ft.Container(height=10),
+                    ft.Text("Channel Selector Style:"),
+                    ft.SegmentedButton(
+                        selected={state.channel_selector_style},
+                        on_change=update_channel_selector_style,
+                        segments=[
+                            ft.Segment(value="dropdown", label=ft.Text("Dropdown")),
+                            ft.Segment(value="plain", label=ft.Text("Plain")),
+                        ]
+                    )
                 ])
             ]
         return controls_list

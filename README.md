@@ -1,4 +1,13 @@
-  # About this project: all-might
+# How to try this app?
+Clone this repo, cd into the folder and then just run:
+```bash
+nix develop -c python src/main.py
+```
+
+# Screenshots and recordings
+Checkout the `screencapture/` folder
+
+# About this project: all-might
 This project is an attempt to bring a user friendly and powerful GUI for nixpkgs.
 Project planned to work Cross platform for All platforms where Nix works like Most Linux distros, Mac and Android(possibly with the AVF efforts from Android 16 onwards?).
 
@@ -18,7 +27,7 @@ All those are cool, but sometimes they have:
 But even if u are someone who are sometimes not mesmerized by nixpkgs and want to install flatpaks too declaratively? Possibly a plan to include flatpak support too, but have to be decided later on this. Coz somemight like flatpaks to be managed separately with another app store like Easy Flatpak etc. Let's discuss on this.
 
 # What does all-might do different from other app stores?
-* U can choose to install apps from both rolling and stable branch together :-). Again Cool right?
+* U can choose to install apps from both rolling and stable branch together :-). Again Cool right? And the tons of benefits from nix and nixpkgs
 
 # Features planned
 * Choosing apps from stable or unstable repo branches (probably even old repo branches)
@@ -39,7 +48,12 @@ IUKUK (will reveal the detailed reason later)
 I want the project to be cross platformic and I'm little familiar with python. So I'm using the flet framework for this as for now. Who knows some crazy person will do a lightweight or rust rewrite and submit a PR and it's more than welcome. I love options, so probably different UI frameworks can also be done in parallel and users can have option to install whatever the framework they like, so that project grows with unified efforts than diverging. Of course with nix it's greatly helpful to do those.
 
 # Roadmap
-* A Basic working app
+* A Basic working app (almost done)
 * Features getting added one by one
+
+# What's the process of making this app?
+I got my hands on Gemini 3 pro model. So wanted to try bilding something which I had in my mind recently. So though all the design, features, customization are totally my creativity, still this app is purely VIBE CODED. i think of this as a design which also works :-)
+
+Hence I dont take PRs for this now, since that would be rude for those actual coders. Instead please submit issues, feature requests etc. Sky(Gemini Quota) is the limit . So I'm adding features to the app as per my creativity and suggestions from others.
 
 The README is also WIP. So please feel free to suggest features / anything.
