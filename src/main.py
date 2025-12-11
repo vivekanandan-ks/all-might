@@ -1304,6 +1304,52 @@ def main(page: ft.Page):
 
     nav_bar = build_custom_navbar(on_nav_change, current_nav_idx)
 
+    # Initialize Rotation
+    bg_image_control.rotate = ft.Rotate(0, alignment=ft.alignment.center)
+    bg_image_control.scale = ft.Scale(1)
+    default_bg_container.rotate = ft.Rotate(0, alignment=ft.alignment.center)
+    default_bg_container.scale = ft.Scale(1)
+
+    def rotation_loop():
+        angle = 0.0
+        while True:
+            if state.bg_rotation:
+                angle += state.bg_rotation_speed
+                if angle >= 360: angle -= 360
+                
+                rad = angle * 3.14159 / 180.0
+                
+                # Apply to both
+                bg_image_control.rotate.angle = rad
+                bg_image_control.scale.scale = 1.5
+                
+                default_bg_container.rotate.angle = rad
+                default_bg_container.scale.scale = 1.5
+                
+                try:
+                    if bg_image_control.page and bg_image_control.visible:
+                        bg_image_control.update()
+                    if default_bg_container.page and default_bg_container.visible:
+                        default_bg_container.update()
+                except:
+                    pass
+                time.sleep(0.05)
+            else:
+                # Reset if needed
+                if bg_image_control.scale.scale != 1:
+                    bg_image_control.rotate.angle = 0
+                    bg_image_control.scale.scale = 1
+                    default_bg_container.rotate.angle = 0
+                    default_bg_container.scale.scale = 1
+                    try:
+                        if bg_image_control.page: bg_image_control.update()
+                        if default_bg_container.page: default_bg_container.update()
+                    except:
+                        pass
+                time.sleep(1.0)
+
+    threading.Thread(target=rotation_loop, daemon=True).start()
+
     # Main Page Layout
     # Use a Stack to layer background, main content, and floating nav/overlays
     page.add(

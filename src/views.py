@@ -747,9 +747,14 @@ def get_home_view():
     )
 
 def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toast, show_destructive_dialog, refresh_dropdown_options, update_badges_style, update_bg_callback=None):
+    categories = ["appearance", "profile", "channels", "run_config", "home_config", "installed", "debug", "experimental"]
+    initial_cat_idx = state.last_settings_category
+    if initial_cat_idx < 0 or initial_cat_idx >= len(categories):
+        initial_cat_idx = 0
+    
     settings_ui_state = {
         "expanded_tile": None,
-        "selected_category": "appearance",
+        "selected_category": categories[initial_cat_idx],
         "scroll_offset": 0
     }
     settings_scroll_ref = ft.Ref()
@@ -1627,13 +1632,13 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
             txt_bg_opacity = ft.Text(f"{int(state.background_opacity * 100)}%", size=12, width=40)
             def update_bg_opacity(e):
                 val = float(e.control.value)
-                state.background_opacity = val
-                txt_bg_opacity.value = f"{int(val * 100)}%"
+                state.background_opacity = val / 100.0
+                txt_bg_opacity.value = f"{int(val)}%"
                 txt_bg_opacity.update()
                 state.save_settings()
                 if update_bg_callback: update_bg_callback()
             
-            bg_opacity_slider = ft.Slider(min=0.0, max=1.0, divisions=100, value=state.background_opacity, label="{value}", on_change=update_bg_opacity, expand=True)
+            bg_opacity_slider = ft.Slider(min=0, max=100, divisions=100, value=state.background_opacity * 100, label="{value}%", on_change=update_bg_opacity, expand=True)
 
             # Blur Slider
             txt_bg_blur = ft.Text(f"{int(state.background_blur)} px", size=12, width=40)
@@ -1646,6 +1651,23 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 if update_bg_callback: update_bg_callback()
 
             bg_blur_slider = ft.Slider(min=0, max=50, divisions=50, value=state.background_blur, label="{value}", on_change=update_bg_blur, expand=True)
+
+            # Rotation
+            txt_bg_rot_speed = ft.Text(f"{state.bg_rotation_speed}x", size=12, width=40)
+            def update_bg_rot(e):
+                state.bg_rotation = e.control.value
+                state.save_settings()
+                if update_bg_callback: update_bg_callback()
+
+            def update_bg_rot_speed(e):
+                val = float(e.control.value)
+                state.bg_rotation_speed = val
+                txt_bg_rot_speed.value = f"{val}x"
+                txt_bg_rot_speed.update()
+                state.save_settings()
+                if update_bg_callback: update_bg_callback()
+            
+            bg_rot_speed_slider = ft.Slider(min=0.1, max=5.0, divisions=49, value=state.bg_rotation_speed, label="{value}x", on_change=update_bg_rot_speed, expand=True)
 
             slider_global_radius = ft.Slider(min=0, max=50, value=state.global_radius, label="{value}", on_change=update_global_radius, on_change_end=save_and_refresh_fonts)
             slider_nav_radius = ft.Slider(min=0, max=50, value=state.nav_radius, label="{value}", on_change=update_nav_radius, on_change_end=save_and_refresh_fonts, disabled=state.sync_nav_radius)
@@ -1697,6 +1719,9 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                     ft.Container(height=5),
                     ft.Text("Background Blur:", weight=ft.FontWeight.BOLD), 
                     ft.Row([bg_blur_slider, txt_bg_blur], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Container(height=5),
+                    ft.Row([ft.Text("Rotate Background:", weight=ft.FontWeight.BOLD), ft.Switch(value=state.bg_rotation, on_change=update_bg_rot)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Row([bg_rot_speed_slider, txt_bg_rot_speed], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ]),
                 ft.Container(height=10),
                 make_settings_tile("Radius", [
@@ -1951,12 +1976,14 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
 
     def on_settings_nav_change(e):
         idx = e.control.selected_index
+        state.last_settings_category = idx
+        state.save_settings()
         categories = ["appearance", "profile", "channels", "run_config", "home_config", "installed", "debug", "experimental"]
         settings_ui_state["selected_category"] = categories[idx]
         update_settings_view()
     
     settings_nav_rail = ft.NavigationRail(
-        selected_index=0,
+        selected_index=initial_cat_idx,
         label_type=ft.NavigationRailLabelType.ALL,
         min_width=100,
         min_extended_width=200,
