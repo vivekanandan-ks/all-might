@@ -21,6 +21,9 @@ class AppState:
 
         # New Features
         self.search_limit = 30
+        self.background_image = None
+        self.background_opacity = 0.15
+        self.background_blur = 0
 
         # Nav Bar Settings
         self.floating_nav = True
@@ -175,7 +178,7 @@ class AppState:
                     data = json.load(f)
                     self.username = data.get("username", "user")
                     self.default_channel = data.get("default_channel", self.default_channel)
-                    self.theme_mode = data.get("theme_mode", "dark")
+                    self.theme_mode = "dark" # Enforce Dark Mode
                     self.theme_color = data.get("theme_color", "blue")
 
                     legacy_timer = data.get("countdown_timer", 5)
@@ -185,6 +188,9 @@ class AppState:
                     self.nav_badge_size = data.get("nav_badge_size", 20)
 
                     self.search_limit = data.get("search_limit", 30)
+                    self.background_image = data.get("background_image", None)
+                    self.background_opacity = data.get("background_opacity", 0.15)
+                    self.background_blur = data.get("background_blur", 0)
                     self.floating_nav = data.get("floating_nav", True)
                     self.adaptive_nav = data.get("adaptive_nav", True)
                     self.glass_nav = data.get("glass_nav", True)
@@ -338,6 +344,9 @@ class AppState:
                 "undo_timer": self.undo_timer,
                 "nav_badge_size": self.nav_badge_size,
                 "search_limit": self.search_limit,
+                "background_image": self.background_image,
+                "background_opacity": self.background_opacity,
+                "background_blur": self.background_blur,
 
                 "floating_nav": self.floating_nav,
                 "adaptive_nav": self.adaptive_nav,
@@ -448,6 +457,9 @@ class AppState:
                 "undo_timer": self.undo_timer,
                 "nav_badge_size": self.nav_badge_size,
                 "search_limit": self.search_limit,
+                "background_image": self.background_image,
+                "background_opacity": self.background_opacity,
+                "background_blur": self.background_blur,
 
                 "floating_nav": self.floating_nav,
                 "adaptive_nav": self.adaptive_nav,

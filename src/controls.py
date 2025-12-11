@@ -148,7 +148,7 @@ class UndoToast(ft.Container):
             self.on_undo()
 
 class DelayedActionToast(ft.Container):
-    def __init__(self, message, on_execute, duration_seconds=5, on_cancel=None):
+    def __init__(self, message, on_execute, duration_seconds=5, on_cancel=None, cancel_text="CANCEL"):
         self.duration_seconds = duration_seconds
         self.on_execute = on_execute
         self.on_cancel = on_cancel
@@ -172,8 +172,8 @@ class DelayedActionToast(ft.Container):
                     ]
                 ),
                 ft.TextButton(
-                    content=ft.Row([ft.Icon(ft.Icons.CANCEL, size=text_sz*1.2), ft.Text("CANCEL", weight=ft.FontWeight.BOLD, size=text_sz)], spacing=5),
-                    style=ft.ButtonStyle(color=ft.Colors.RED_200),
+                    content=ft.Row([ft.Icon(ft.Icons.CANCEL if cancel_text=="CANCEL" else ft.Icons.CHECK, size=text_sz*1.2), ft.Text(cancel_text, weight=ft.FontWeight.BOLD, size=text_sz)], spacing=5),
+                    style=ft.ButtonStyle(color=ft.Colors.RED_200 if cancel_text=="CANCEL" else ft.Colors.GREEN_200),
                     on_click=self.handle_cancel
                 )
             ]

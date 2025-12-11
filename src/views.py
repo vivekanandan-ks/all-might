@@ -746,7 +746,7 @@ def get_home_view():
         )
     )
 
-def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toast, show_destructive_dialog, refresh_dropdown_options, update_badges_style):
+def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toast, show_destructive_dialog, refresh_dropdown_options, update_badges_style, update_bg_callback=None):
     settings_ui_state = {
         "expanded_tile": None,
         "selected_category": "appearance",
@@ -1537,25 +1537,115 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                 ])
             ]
         elif category == "appearance":
-            theme_mode_segment = ft.SegmentedButton(
-                selected={state.theme_mode},
-                on_change=lambda e: change_theme(e.control.selected.pop()),
-                segments=[
-                    ft.Segment(value="light", label=ft.Text("Light"), icon=ft.Icon(ft.Icons.LIGHT_MODE)),
-                    ft.Segment(value="dark", label=ft.Text("Dark"), icon=ft.Icon(ft.Icons.DARK_MODE)),
-                ]
+            # Removed Theme Mode Segment per user request (Enforced Dark Mode)
+
+            # Background Image Controls
+            bg_image_input = ft.TextField(
+                value=state.background_image if state.background_image else "",
+                hint_text="URL or Local Path",
+                expand=True,
+                text_size=12,
+                content_padding=10,
+                filled=True,
+                bgcolor=ft.Colors.with_opacity(0.1, "onSurface")
             )
-            color_controls = []
-            for name, code in COLOR_NAME_MAP.items():
-                is_selected = (name == state.theme_color)
-                color_controls.append(
-                    ft.Container(
-                        width=40, height=40, border_radius=20, bgcolor=code,
-                        border=ft.border.all(2, "white") if is_selected else ft.border.all(2, ft.Colors.TRANSPARENT),
-                        on_click=lambda e, color_name=name: change_color_scheme(color_name),
-                        ink=True, tooltip=name.capitalize()
-                    )
-                )
+
+            def handle_bg_change_with_revert(new_bg, new_opacity=None, new_blur=None):
+                old_bg = state.background_image
+                old_opacity = state.background_opacity
+                old_blur = state.background_blur
+                
+                # Apply new
+                state.background_image = new_bg
+                if new_opacity is not None:
+                    state.background_opacity = new_opacity
+                if new_blur is not None:
+                    state.background_blur = new_blur
+                
+                state.save_settings()
+                if update_bg_callback: update_bg_callback()
+                if navbar_ref[0]: navbar_ref[0]()
+                page.update()
+
+                # Revert Logic
+                def revert_func():
+                    state.background_image = old_bg
+                    state.background_opacity = old_opacity
+                    state.background_blur = old_blur
+                    state.save_settings()
+                    
+                    bg_image_input.value = old_bg if old_bg else ""
+                    bg_opacity_slider.value = old_opacity
+                    txt_bg_opacity.value = f"{int(old_opacity * 100)}%"
+                    bg_blur_slider.value = old_blur
+                    txt_bg_blur.value = f"{int(old_blur)} px"
+                    
+                    if update_bg_callback: update_bg_callback()
+                    if navbar_ref[0]: navbar_ref[0]()
+                    page.update()
+                    if show_toast: show_toast("Reverted background")
+
+                def keep_func():
+                    if show_toast: show_toast("Background kept")
+
+                # Show Revert Toast (15s)
+                if controls_mod.show_delayed_toast_global:
+                     controls_mod.show_delayed_toast_global("Reverting background in 15s...", revert_func, duration=15, cancel_text="KEEP", on_cancel=keep_func)
+
+            def update_bg_image(e):
+                val = bg_image_input.value.strip()
+                new_bg = val if val else None
+                if new_bg != state.background_image:
+                    handle_bg_change_with_revert(new_bg)
+
+            bg_image_input.on_submit = update_bg_image
+            bg_image_input.on_blur = update_bg_image
+
+            def pick_bg_file(e: ft.FilePickerResultEvent):
+                if e.files:
+                    path = e.files[0].path
+                    bg_image_input.value = path
+                    handle_bg_change_with_revert(path)
+
+            bg_file_picker = ft.FilePicker(on_result=pick_bg_file)
+            if bg_file_picker not in page.overlay:
+                page.overlay.append(bg_file_picker)
+                page.update()
+
+            def clear_bg_image(e):
+                if state.background_image:
+                    bg_image_input.value = ""
+                    handle_bg_change_with_revert(None)
+
+            bg_image_row = ft.Row([
+                bg_image_input,
+                ft.IconButton(ft.Icons.IMAGE, tooltip="Select File", on_click=lambda _: bg_file_picker.pick_files(allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE)),
+                ft.IconButton(ft.Icons.CLEAR, tooltip="Clear", on_click=clear_bg_image)
+            ])
+
+            # Brightness/Opacity Slider
+            txt_bg_opacity = ft.Text(f"{int(state.background_opacity * 100)}%", size=12, width=40)
+            def update_bg_opacity(e):
+                val = float(e.control.value)
+                state.background_opacity = val
+                txt_bg_opacity.value = f"{int(val * 100)}%"
+                txt_bg_opacity.update()
+                state.save_settings()
+                if update_bg_callback: update_bg_callback()
+            
+            bg_opacity_slider = ft.Slider(min=0.0, max=1.0, divisions=100, value=state.background_opacity, label="{value}", on_change=update_bg_opacity, expand=True)
+
+            # Blur Slider
+            txt_bg_blur = ft.Text(f"{int(state.background_blur)} px", size=12, width=40)
+            def update_bg_blur(e):
+                val = float(e.control.value)
+                state.background_blur = val
+                txt_bg_blur.value = f"{int(val)} px"
+                txt_bg_blur.update()
+                state.save_settings()
+                if update_bg_callback: update_bg_callback()
+
+            bg_blur_slider = ft.Slider(min=0, max=50, divisions=50, value=state.background_blur, label="{value}", on_change=update_bg_blur, expand=True)
 
             slider_global_radius = ft.Slider(min=0, max=50, value=state.global_radius, label="{value}", on_change=update_global_radius, on_change_end=save_and_refresh_fonts)
             slider_nav_radius = ft.Slider(min=0, max=50, value=state.nav_radius, label="{value}", on_change=update_nav_radius, on_change_end=save_and_refresh_fonts, disabled=state.sync_nav_radius)
@@ -1600,9 +1690,13 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
             controls_list = [
                 ft.Text("Appearance", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
                 make_settings_tile("Theme", [
-                    ft.Text("Mode:", weight=ft.FontWeight.BOLD), theme_mode_segment,
+                    ft.Text("Background Image:", weight=ft.FontWeight.BOLD), bg_image_row,
                     ft.Container(height=10),
-                    ft.Text("Accent Color:", weight=ft.FontWeight.BOLD), ft.Row(controls=color_controls, spacing=10)
+                    ft.Text("Background Brightness:", weight=ft.FontWeight.BOLD), 
+                    ft.Row([bg_opacity_slider, txt_bg_opacity], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Container(height=5),
+                    ft.Text("Background Blur:", weight=ft.FontWeight.BOLD), 
+                    ft.Row([bg_blur_slider, txt_bg_blur], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ]),
                 ft.Container(height=10),
                 make_settings_tile("Radius", [
