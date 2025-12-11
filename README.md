@@ -5,7 +5,7 @@ nix develop -c python src/main.py
 ```
 
 # Screen recordings
-[![Watch the video](screencaptures/Screenshots/Screenshot_20251211_211938.png)](screencaptures/recording.webm)
+[![Watch the video](screencaptures/screenshots/Screenshot_20251211_211938.png)](screencaptures/recording.webm?raw=true)
 Feel free to watch it in 2x speed.
 Source: `screencaptures/` folder
 
