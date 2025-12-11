@@ -705,8 +705,12 @@ def get_home_view():
         vertical_alignment=ft.CrossAxisAlignment.START,
         controls=[
             ft.Column([
-                ft.Row([ft.Icon(ft.Icons.HOME_FILLED, size=state.get_size(4.0), color=ft.Colors.BLUE_200)], alignment=ft.MainAxisAlignment.START),
-                ft.Text(f"Hello, {state.username}!", size=state.get_size(2.3), weight=ft.FontWeight.W_900, color="onSurface"),
+                TypewriterControl(
+                    texts=[f"Hello, {state.username}!", "It's never too late."],
+                    size=state.get_size(2.3), 
+                    weight=ft.FontWeight.W_900, 
+                    color="onSurface"
+                ),
                 ft.Text("Welcome to All Might", size=state.get_size(1.15), color="onSurfaceVariant"),
             ]),
             ft.Container(
