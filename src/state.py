@@ -78,6 +78,11 @@ class AppState:
         # Debug Settings
         self.show_refresh_button = True
 
+        # Experimental
+        self.fetch_icons = True
+        self.icon_size = 48
+        self.channel_selector_style = "plain"
+
         # Quote Settings
         self.use_mastodon_quote = True
         self.quote_mastodon_server = "mstdn.social"
@@ -300,6 +305,11 @@ class AppState:
                     self.carousel_glass = data.get("carousel_glass", True)
                     self.show_refresh_button = data.get("show_refresh_button", True)
 
+                    # Experimental
+                    self.fetch_icons = data.get("fetch_icons", True)
+                    self.icon_size = data.get("icon_size", 48)
+                    self.channel_selector_style = data.get("channel_selector_style", "plain")
+
                     self.available_channels = data.get("available_channels", self.available_channels)
                     self.active_channels = data.get("active_channels", self.active_channels)
 
@@ -406,6 +416,10 @@ class AppState:
                 "carousel_glass": self.carousel_glass,
                 "show_refresh_button": self.show_refresh_button,
 
+                "fetch_icons": self.fetch_icons,
+                "icon_size": self.icon_size,
+                "channel_selector_style": self.channel_selector_style,
+
                 "available_channels": self.available_channels,
                 "active_channels": self.active_channels,
                 "shell_single_prefix": self.shell_single_prefix,
@@ -500,6 +514,10 @@ class AppState:
                 "carousel_timer": self.carousel_timer,
                 "carousel_glass": self.carousel_glass,
                 "show_refresh_button": self.show_refresh_button,
+
+                "fetch_icons": self.fetch_icons,
+                "icon_size": self.icon_size,
+                "channel_selector_style": self.channel_selector_style,
 
                 "available_channels": self.available_channels,
                 "active_channels": self.active_channels,

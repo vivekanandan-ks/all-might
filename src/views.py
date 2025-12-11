@@ -1579,6 +1579,24 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
             slider_small_font = ft.Slider(min=6, max=18, value=state.small_font_size, label="{value}", on_change=update_small_font_live, on_change_end=save_and_refresh_fonts, disabled=state.sync_small_font)
             slider_nav_font = ft.Slider(min=6, max=18, value=state.nav_font_size, label="{value}", on_change=update_nav_font_live, on_change_end=save_and_refresh_fonts, disabled=state.sync_nav_font)
 
+            # --- Moved from Experimental ---
+            def update_fetch_icons(e):
+                state.fetch_icons = e.control.value
+                state.save_settings()
+
+            def update_icon_size(e):
+                state.icon_size = int(e.control.value)
+                state.save_settings()
+                txt_icon_size.value = f"Icon Size (Cur: {int(e.control.value)} | Def: 48)"
+                txt_icon_size.update()
+
+            def update_channel_selector_style(e):
+                state.channel_selector_style = e.control.selected.pop()
+                state.save_settings()
+
+            txt_icon_size = ft.Text(f"Icon Size (Cur: {state.icon_size} | Def: 48)")
+            # -------------------------------
+
             controls_list = [
                 ft.Text("Appearance", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
                 make_settings_tile("Theme", [
@@ -1631,7 +1649,24 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                             preview_text_title
                         ])
                     )
-                ], reset_func=reset_font_defaults)
+                ], reset_func=reset_font_defaults),
+                ft.Container(height=10),
+                make_settings_tile("UI Options", [
+                    ft.Row([ft.Text("Fetch Icons for Search Results:"), ft.Switch(value=state.fetch_icons, on_change=update_fetch_icons)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Container(height=10),
+                    txt_icon_size,
+                    ft.Slider(min=24, max=96, value=state.icon_size, label="{value}", on_change=update_icon_size),
+                    ft.Container(height=10),
+                    ft.Text("Channel Selector Style:"),
+                    ft.SegmentedButton(
+                        selected={state.channel_selector_style},
+                        on_change=update_channel_selector_style,
+                        segments=[
+                            ft.Segment(value="dropdown", label=ft.Text("Dropdown")),
+                            ft.Segment(value="plain", label=ft.Text("Plain")),
+                        ]
+                    )
+                ])
             ]
         elif category == "channels":
             search_limit_input = ft.TextField(value=str(state.search_limit), width=100, height=40, text_size=12, content_padding=10, filled=True, bgcolor=ft.Colors.with_opacity(0.1, "onSurface"), on_submit=update_search_limit, on_blur=update_search_limit)
@@ -1785,6 +1820,11 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                     ft.Row([ft.Text("Show Refresh Button:"), ft.Switch(value=state.show_refresh_button, on_change=update_show_refresh)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
                 ])
             ]
+        elif category == "experimental":
+            controls_list = [
+                ft.Text("Experimental Settings", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
+                ft.Text("No experimental settings currently.", color="onSurfaceVariant")
+            ]
         return controls_list
 
     def update_settings_view():
@@ -1817,7 +1857,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
 
     def on_settings_nav_change(e):
         idx = e.control.selected_index
-        categories = ["appearance", "profile", "channels", "run_config", "home_config", "installed", "debug"]
+        categories = ["appearance", "profile", "channels", "run_config", "home_config", "installed", "debug", "experimental"]
         settings_ui_state["selected_category"] = categories[idx]
         update_settings_view()
     
@@ -1837,6 +1877,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
             ft.NavigationRailDestination(icon=ft.Icons.HOME_OUTLINED, selected_icon=ft.Icons.HOME, label="Home Config"),
             ft.NavigationRailDestination(icon=ft.Icons.APPS_OUTLINED, selected_icon=ft.Icons.APPS, label="Installed"),
             ft.NavigationRailDestination(icon=ft.Icons.BUG_REPORT_OUTLINED, selected_icon=ft.Icons.BUG_REPORT, label="Debug"),
+            ft.NavigationRailDestination(icon=ft.Icons.SCIENCE_OUTLINED, selected_icon=ft.Icons.SCIENCE, label="Experimental"),
         ]
     )
     
