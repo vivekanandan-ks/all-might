@@ -4,12 +4,14 @@ Clone this repo, cd into the folder and then just run:
 nix develop -c python src/main.py
 ```
 
-# Screenshots and recordings
-Checkout the `screencapture/` folder
+# Screen recordings
+[![Watch the video](screencaptures/Screenshots/Screenshot_20251211_211938.png)](screencaptures/recording.webm)
+Feel free to watch it in 2x speed.
+Source: `screencaptures/` folder
 
 # About this project: all-might
 This project is an attempt to bring a user friendly and powerful GUI for nixpkgs.
-Project planned to work Cross platform for All platforms where Nix works like Most Linux distros, Mac and Android(possibly with the AVF efforts from Android 16 onwards?).
+Project planned to work Cross platform for All platforms where Nix works like Most Linux distros, Mac and Android(possibly with the AVF efforts from Android 16 onwards?). Big claims but will figure things on the way. Let's see.
 
 # Why nixpkgs?
 Too many reasons. 
