@@ -1319,12 +1319,14 @@ def main(page: ft.Page):
                 
                 rad = angle * 3.14159 / 180.0
                 
+                scale_val = state.bg_rotation_scale
+                
                 # Apply to both
                 bg_image_control.rotate.angle = rad
-                bg_image_control.scale.scale = 1.5
+                bg_image_control.scale.scale = scale_val
                 
                 default_bg_container.rotate.angle = rad
-                default_bg_container.scale.scale = 1.5
+                default_bg_container.scale.scale = scale_val
                 
                 try:
                     if bg_image_control.page and bg_image_control.visible:
