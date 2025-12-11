@@ -335,7 +335,7 @@ def main(page: ft.Page):
     controls.show_toast_global = show_toast
     controls.show_undo_toast_global = show_undo_toast
 
-    def show_delayed_toast(message, on_execute, duration=None, on_cancel=None, cancel_text="CANCEL"):
+    def show_delayed_toast(message, on_execute, duration=None, on_cancel=None, cancel_text="CANCEL", immediate_action_text=None, immediate_action_icon=None):
         current_toast_token[0] += 1
         my_token = current_toast_token[0]
         delay_duration = duration if duration is not None else state.undo_timer
@@ -352,7 +352,7 @@ def main(page: ft.Page):
                 toast_overlay_container.visible = False
                 page.update()
 
-        delayed_control = DelayedActionToast(message, on_execute=wrapped_execute, on_cancel=wrapped_cancel, duration_seconds=delay_duration, cancel_text=cancel_text)
+        delayed_control = DelayedActionToast(message, on_execute=wrapped_execute, on_cancel=wrapped_cancel, duration_seconds=delay_duration, cancel_text=cancel_text, immediate_action_text=immediate_action_text, immediate_action_icon=immediate_action_icon)
         toast_overlay_container.content = delayed_control
         toast_overlay_container.visible = True
         page.update()

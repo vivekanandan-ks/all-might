@@ -1602,7 +1602,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
 
                 # Show Revert Toast (15s)
                 if controls_mod.show_delayed_toast_global:
-                     controls_mod.show_delayed_toast_global("Reverting background in 15s...", revert_func, duration=15, cancel_text="KEEP", on_cancel=keep_func)
+                     controls_mod.show_delayed_toast_global("Reverting background in 15s...", revert_func, duration=15, cancel_text="KEEP", on_cancel=keep_func, immediate_action_text="REVERT")
 
             def update_bg_image(e):
                 val = bg_image_input.value.strip()
