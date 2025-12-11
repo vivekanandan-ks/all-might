@@ -4,8 +4,11 @@ import shlex
 import threading
 import time
 import subprocess
+import re
+import urllib.request
+from urllib.parse import urljoin, urlparse
 from state import state
-from utils import execute_nix_search
+from utils import execute_nix_search, fetch_opengraph_data
 
 # --- Global Callback Reference ---
 global_open_menu_func = None
@@ -390,6 +393,18 @@ class NixPackageCard(GlassContainer):
         license_list = self.pkg.get("package_license_set", [])
         license_text = license_list[0] if isinstance(license_list, list) and license_list else "Unknown"
 
+        self.icon_url = None
+        icon_size = state.icon_size
+        self.icon_placeholder = ft.Container(
+            width=icon_size, height=icon_size,
+            bgcolor=ft.Colors.with_opacity(0.1, state.get_base_color()),
+            border_radius=8,
+            alignment=ft.alignment.center,
+            content=ft.Icon(ft.Icons.ARCHIVE, color="onSurface")
+        )
+        self.icon_image = ft.Image(src=self.icon_url, width=icon_size, height=icon_size, fit=ft.ImageFit.CONTAIN, border_radius=8)
+        self.icon_container = ft.Container(content=self.icon_placeholder, width=icon_size, height=icon_size)
+
         self.programs_list = self.pkg.get("package_programs", [])
         programs_str = ", ".join(self.programs_list) if self.programs_list else None
         
@@ -655,7 +670,10 @@ class NixPackageCard(GlassContainer):
             ft.Row(
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                 controls=[
-                    ft.Column(spacing=2, controls=left_col_controls),
+                    ft.Row([
+                        self.icon_container,
+                        ft.Column(spacing=2, controls=left_col_controls),
+                    ]),
                     ft.Row(spacing=5, controls=[
                         self.channel_control_area,
                         self.install_btn,
@@ -692,6 +710,90 @@ class NixPackageCard(GlassContainer):
         content = ft.Column(spacing=4, controls=card_content_controls)
         super().__init__(content=content, padding=12, opacity=0.15, border_radius=state.get_radius('card'))
         self.update_copy_tooltip()
+
+        if state.fetch_icons:
+            threading.Thread(target=self.fetch_icon, daemon=True).start()
+
+    def fetch_icon(self):
+        homepage_list = self.pkg.get("package_homepage", [])
+        homepage_url = homepage_list[0] if isinstance(homepage_list, list) and homepage_list else ""
+        if not homepage_url:
+            return
+
+        icon_url = None
+
+        # 1. Prioritize favicon.ico at the root
+        try:
+            parsed_url = urlparse(homepage_url)
+            favicon_ico_url = f"{parsed_url.scheme}://{parsed_url.netloc}/favicon.ico"
+            with urllib.request.urlopen(favicon_ico_url, timeout=2) as response:
+                info = response.info()
+                content_type = info.get_content_type() if info else None
+                if content_type and content_type.startswith('image/'):
+                    icon_url = favicon_ico_url
+                    print(f"Found favicon.ico: {icon_url}")
+        except Exception:
+            pass # favicon.ico not found, proceed to HTML parsing
+
+        # 2. Parse HTML for other icons if favicon.ico not found or invalid
+        if not icon_url:
+            try:
+                with urllib.request.urlopen(homepage_url, timeout=5) as response:
+                    html = response.read().decode('utf-8', errors='ignore')
+
+                icons = []
+                # Find all potential icons
+                for rel in ["icon", "shortcut icon", "apple-touch-icon"]:
+                    for match in re.finditer(r'<link\s+rel="' + rel + r'"[^>]*?href="([^"]+)"', html, re.IGNORECASE):
+                        href = match.group(1)
+                        sizes_match = re.search(r'sizes="(\d+x\d+)"', match.group(0))
+                        size = sizes_match.group(1) if sizes_match else "0x0"
+                        icons.append({"href": href, "size": size})
+
+                if icons:
+                    # Sort icons by size (smallest first)
+                    icons.sort(key=lambda x: int(x['size'].split('x')[0]) if x['size'] != "0x0" else 999)
+                    
+                    # Get the best icon (smallest, but not 0x0 if possible)
+                    best_icon = icons[0]
+                    icon_url = best_icon['href']
+                    
+                    if not icon_url.startswith(('http:', 'https:')):
+                        icon_url = urljoin(homepage_url, icon_url)
+                    print(f"Found icon URL from HTML: {icon_url}")
+
+            except Exception as e:
+                print(f"Error parsing HTML for {homepage_url}: {e}")
+
+        # 3. Fallback to OpenGraph
+        if not icon_url:
+            print(f"No favicon found for {homepage_url}, falling back to OpenGraph.")
+            data = fetch_opengraph_data(homepage_url)
+            if data and data.get("image"):
+                icon_url = data.get("image")
+                print(f"Found OpenGraph image: {icon_url} for {homepage_url}")
+
+        if icon_url:
+            try:
+                with urllib.request.urlopen(icon_url, timeout=5) as response:
+                    info = response.info()
+                    content_type = info.get_content_type() if info else None
+                    if content_type and content_type.startswith('image/'):
+                        self.icon_url = icon_url
+                        self.icon_image.src = self.icon_url
+                        self.icon_container.content = self.icon_image
+                    else:
+                        print(f"Invalid content type '{content_type}' for icon: {icon_url}")
+                        self.icon_container.content = ft.Icon(ft.Icons.BROKEN_IMAGE, color="onSurface")
+
+            except Exception as e:
+                print(f"Error validating or fetching icon {icon_url}: {e}")
+                self.icon_container.content = ft.Icon(ft.Icons.BROKEN_IMAGE, color="onSurface")
+        else:
+            print(f"No icon found for {homepage_url}")
+
+        if self.page:
+            self.update()
 
     def open_action_menu(self, e):
         if not show_glass_menu_global: return
@@ -745,7 +847,7 @@ class NixPackageCard(GlassContainer):
         # Improved: We can clear the menu content to "close" it effectively visually if we pass empty list?
         # But `show_glass_menu` uses `e`.
         
-        # Let's define actions that update UI.
+        # Let's define actions that update UI. 
         
         items = [
             create_menu_item(ft.Icons.PLAY_ARROW, "Run without installing", lambda e: self.set_mode_and_update_ui("direct")),
@@ -1059,7 +1161,7 @@ class NixPackageCard(GlassContainer):
                 self.channel_text.value = f"{self.version} ({new_channel})"
 
             self.selected_channel = new_channel
-            self.channel_text.update()
+            self.channel_text.update() # Update text control
             
             # Update tracking status for new channel
             self.is_all_might = state.is_tracked(self.pname, self.selected_channel)

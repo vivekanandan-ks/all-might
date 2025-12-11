@@ -1785,6 +1785,23 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                     ft.Row([ft.Text("Show Refresh Button:"), ft.Switch(value=state.show_refresh_button, on_change=update_show_refresh)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
                 ])
             ]
+        elif category == "experimental":
+            def update_fetch_icons(e):
+                state.fetch_icons = e.control.value
+                state.save_settings()
+
+            def update_icon_size(e):
+                state.icon_size = int(e.control.value)
+                state.save_settings()
+
+            controls_list = [
+                ft.Text("Experimental Settings", size=24, weight=ft.FontWeight.BOLD), ft.Divider(),
+                make_settings_tile("Icon Fetching", [
+                    ft.Row([ft.Text("Fetch Icons for Search Results:"), ft.Switch(value=state.fetch_icons, on_change=update_fetch_icons)], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Text("Icon Size:"),
+                    ft.Slider(min=24, max=96, value=state.icon_size, label="{value}", on_change=update_icon_size)
+                ])
+            ]
         return controls_list
 
     def update_settings_view():
@@ -1817,7 +1834,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
 
     def on_settings_nav_change(e):
         idx = e.control.selected_index
-        categories = ["appearance", "profile", "channels", "run_config", "home_config", "installed", "debug"]
+        categories = ["appearance", "profile", "channels", "run_config", "home_config", "installed", "debug", "experimental"]
         settings_ui_state["selected_category"] = categories[idx]
         update_settings_view()
     
@@ -1837,6 +1854,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
             ft.NavigationRailDestination(icon=ft.Icons.HOME_OUTLINED, selected_icon=ft.Icons.HOME, label="Home Config"),
             ft.NavigationRailDestination(icon=ft.Icons.APPS_OUTLINED, selected_icon=ft.Icons.APPS, label="Installed"),
             ft.NavigationRailDestination(icon=ft.Icons.BUG_REPORT_OUTLINED, selected_icon=ft.Icons.BUG_REPORT, label="Debug"),
+            ft.NavigationRailDestination(icon=ft.Icons.SCIENCE_OUTLINED, selected_icon=ft.Icons.SCIENCE, label="Experimental"),
         ]
     )
     

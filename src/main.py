@@ -410,7 +410,8 @@ def main(page: ft.Page):
         for ch in state.active_channels:
             def on_select(e, c=ch):
                 channel_text.value = c
-                channel_text.update()
+                if channel_text.page:
+                    channel_text.update()
                 # We need to update the value on the container wrapper? 
                 # channel_dropdown_container.data = c ? 
                 # channel_dropdown.value was used before.
