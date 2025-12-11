@@ -10,6 +10,54 @@ from urllib.parse import urljoin, urlparse
 from state import state
 from utils import execute_nix_search, fetch_opengraph_data
 
+class TypewriterControl(ft.Text):
+    def __init__(self, texts, transparency=1.0, speed=0.1, wait_time=2.0, **kwargs):
+        super().__init__(**kwargs)
+        self.texts = texts
+        self.speed = speed
+        self.wait_time = wait_time
+        self.running = False
+        self.current_text_idx = 0
+        self.char_idx = 0
+        self.is_deleting = False
+
+    def did_mount(self):
+        self.running = True
+        threading.Thread(target=self._animate, daemon=True).start()
+
+    def will_unmount(self):
+        self.running = False
+
+    def _animate(self):
+        while self.running:
+            current_string = self.texts[self.current_text_idx]
+            
+            if not self.is_deleting:
+                # Typing
+                if self.char_idx < len(current_string):
+                    self.char_idx += 1
+                    self.value = current_string[:self.char_idx] + "|"
+                    if self.page: self.update()
+                    time.sleep(self.speed)
+                else:
+                    # Finished typing, wait
+                    self.value = current_string # Remove cursor blink effect or keep it? Let's remove
+                    if self.page: self.update()
+                    time.sleep(self.wait_time)
+                    self.is_deleting = True
+            else:
+                # Deleting
+                if self.char_idx > 0:
+                    self.char_idx -= 1
+                    self.value = current_string[:self.char_idx] + "|"
+                    if self.page: self.update()
+                    time.sleep(self.speed / 2) # Backspace faster
+                else:
+                    # Finished deleting, move to next string
+                    self.is_deleting = False
+                    self.current_text_idx = (self.current_text_idx + 1) % len(self.texts)
+                    time.sleep(0.5)
+
 # --- Global Callback Reference ---
 global_open_menu_func = None
 show_glass_menu_global = None
