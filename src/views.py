@@ -649,20 +649,10 @@ def get_home_view():
     # --- Carousel Data Logic ---
     carousel_items = []
     
-    # Default/Fallback to Random Tips immediately (so UI doesn't block)
-    import random
-    tips_pool = list(DAILY_TIPS)
-    random.shuffle(tips_pool)
-    selected_tips = tips_pool[:5]
-    
-    colors = [ft.Colors.BLUE, ft.Colors.PURPLE, ft.Colors.ORANGE, ft.Colors.TEAL, ft.Colors.INDIGO]
-    for i, tip in enumerate(selected_tips):
-        carousel_items.append({
-            "title": tip.get("title", "Nix Tip"),
-            "desc": tip.get("code", ""),
-            "icon": ft.Icons.LIGHTBULB_OUTLINE,
-            "color": colors[i % len(colors)]
-        })
+    # Default to App Features (CAROUSEL_DATA)
+    # We copy to avoid modifying the constant if we were to mutate it
+    for item in CAROUSEL_DATA:
+        carousel_items.append(item.copy())
     
     # Use cached data if available
     if state.carousel_use_mastodon and state.carousel_mastodon_cache:
@@ -1587,7 +1577,7 @@ def get_settings_view(page, navbar_ref, on_nav_change, show_toast, show_undo_toa
                     state.save_settings()
                     
                     bg_image_input.value = old_bg if old_bg else ""
-                    bg_opacity_slider.value = old_opacity
+                    bg_opacity_slider.value = old_opacity * 100
                     txt_bg_opacity.value = f"{int(old_opacity * 100)}%"
                     bg_blur_slider.value = old_blur
                     txt_bg_blur.value = f"{int(old_blur)} px"
