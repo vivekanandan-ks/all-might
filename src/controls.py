@@ -1415,15 +1415,24 @@ class NixPackageCard(GlassContainer):
                             break
                     state.update_process_status(process_id, "Cancelled")
 
+                    cancel_btn.disabled = True
+                    cancel_btn.text = "Cancelling..."
+                    if cancel_btn.page:
+                        cancel_btn.update()
+
                     if output_column.page:
+                        output_column.scroll_to(offset=-1, duration=300)
                         output_column.update()
                 except Exception as ex:
                     print(f"Error cancelling process: {ex}")
-            close_dialog(e)
+            # Do not close dialog immediately, let user see the message
+            # close_dialog(e)
+            # The run thread will detect exit and show Close button
 
         def minimize_process(e):
             if self.show_toast:
                 self.show_toast(f"Minimized {self.pname} installation")
+            state.request_pulse()
             close_dialog(e)
 
         close_btn = ft.TextButton("Close", on_click=close_dialog, visible=False)
@@ -1432,6 +1441,18 @@ class NixPackageCard(GlassContainer):
         )
 
         # Header with Minimize Icon
+        minimize_icon = ft.Container(
+            content=ft.Icon(ft.Icons.REMOVE, size=16, color="white"),
+            width=30,
+            height=30,
+            border=ft.border.all(1, ft.Colors.WHITE54),
+            border_radius=5,
+            alignment=ft.alignment.center,
+            on_click=minimize_process,
+            ink=True,
+            tooltip="Minimize",
+        )
+
         title_row = ft.Row(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             controls=[
@@ -1441,12 +1462,7 @@ class NixPackageCard(GlassContainer):
                     weight=ft.FontWeight.BOLD,
                     color="onSurface",
                 ),
-                ft.IconButton(
-                    icon=ft.Icons.REMOVE,  # Hyphen-like icon for minimize
-                    tooltip="Minimize to background",
-                    on_click=minimize_process,
-                    icon_color="white",
-                ),
+                minimize_icon,
             ],
         )
 
@@ -1509,11 +1525,11 @@ class NixPackageCard(GlassContainer):
                     output_column.controls.append(
                         ft.Text(success_msg, color="green", weight="bold")
                     )
-                    state.update_process_status(process_id, "Completed")
                     for p in state.active_processes:
                         if p["id"] == process_id:
                             p["logs"].append(success_msg)
                             break
+                    state.update_process_status(process_id, "Completed")
 
                     file_path = self.pkg.get("package_position", "").split(":")[0]
                     source_url = (
@@ -1560,24 +1576,32 @@ class NixPackageCard(GlassContainer):
                     if self.on_install_change:
                         self.on_install_change()
                 else:
-                    state.update_process_status(process_id, "Failed")
-                    # If cancelled (negative return code usually), don't show error if we know it was cancelled
-                    if process.returncode != -15:  # SIGTERM
+                    # Check if already cancelled
+                    is_cancelled = False
+                    for p in state.active_processes:
+                        if p["id"] == process_id and p.get("status") == "Cancelled":
+                            is_cancelled = True
+                            break
+
+                    if is_cancelled or process.returncode == -15:
+                        state.update_process_status(process_id, "Cancelled")
+                    else:
                         err_msg = f"Process exited with code {process.returncode}"
                         output_column.controls.append(ft.Text(err_msg, color="red"))
                         for p in state.active_processes:
                             if p["id"] == process_id:
                                 p["logs"].append(err_msg)
                                 break
+                        state.update_process_status(process_id, "Failed")
 
             except Exception as ex:
                 err_msg = f"Error: {ex}"
                 output_column.controls.append(ft.Text(err_msg, color="red"))
-                state.update_process_status(process_id, "Error")
                 for p in state.active_processes:
                     if p["id"] == process_id:
                         p["logs"].append(err_msg)
                         break
+                state.update_process_status(process_id, "Error")
 
             # Show close button, hide cancel/minimize
             close_btn.visible = True

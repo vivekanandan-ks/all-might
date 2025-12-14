@@ -171,6 +171,7 @@ class AppState:
         # Active Processes
         self.active_processes = []
         self.on_process_update = None
+        self.on_pulse_request = None
 
         self.load_settings()
         self.load_tracking()
@@ -945,6 +946,10 @@ class AppState:
                 break
         if self.on_process_update:
             self.on_process_update()
+
+    def request_pulse(self):
+        if self.on_pulse_request:
+            self.on_pulse_request()
 
 
 state = AppState()

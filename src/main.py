@@ -853,13 +853,14 @@ def main(page: ft.Page):
     process_view_refresh_ref = [None]
 
     # Pulse animation state
+    pulse_deadline = [0.0]
+
+    def start_pulse_animation():
+        pulse_deadline[0] = time.time() + 5.0
 
     def badge_pulse_loop():
         while True:
-            has_running = any(
-                p.get("status") == "Running" for p in state.active_processes
-            )
-            if has_running:
+            if time.time() < pulse_deadline[0]:
                 try:
                     processes_badge_container.scale = 1.3
                     if processes_badge_container.page:
@@ -880,9 +881,11 @@ def main(page: ft.Page):
                             processes_badge_container.update()
                     except Exception:
                         pass
-                time.sleep(1.0)
+                time.sleep(0.5)
 
     threading.Thread(target=badge_pulse_loop, daemon=True).start()
+
+    state.on_pulse_request = start_pulse_animation
 
     def update_processes_badge():
         count = len(state.active_processes)

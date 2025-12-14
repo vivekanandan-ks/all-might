@@ -121,10 +121,30 @@ def get_processes_view(show_dialog_callback, refresh_callback_ref=None):
         selected={"All"},
         on_change=on_filter_change,
         segments=[
-            ft.Segment(value="All", label=ft.Text("All")),
-            ft.Segment(value="Ongoing", label=ft.Text("Ongoing")),
-            ft.Segment(value="Failed", label=ft.Text("Failed")),
-            ft.Segment(value="History", label=ft.Text("History")),
+            ft.Segment(
+                value="All",
+                label=ft.Container(
+                    content=ft.Text("All"), width=60, alignment=ft.alignment.center
+                ),
+            ),
+            ft.Segment(
+                value="Ongoing",
+                label=ft.Container(
+                    content=ft.Text("Ongoing"), width=80, alignment=ft.alignment.center
+                ),
+            ),
+            ft.Segment(
+                value="Failed",
+                label=ft.Container(
+                    content=ft.Text("Failed"), width=70, alignment=ft.alignment.center
+                ),
+            ),
+            ft.Segment(
+                value="History",
+                label=ft.Container(
+                    content=ft.Text("History"), width=70, alignment=ft.alignment.center
+                ),
+            ),
         ],
     )
 
@@ -174,6 +194,10 @@ def _show_process_details(proc, show_dialog, refresh_list_cb):
             close_func[0]()
 
     def cancel_proc(e):
+        btn = e.control
+        btn.disabled = True
+        btn.text = "Cancelling..."
+        btn.update()
         if proc.get("proc_ref") and proc["proc_ref"][0]:
             try:
                 proc["proc_ref"][0].terminate()
@@ -186,11 +210,38 @@ def _show_process_details(proc, show_dialog, refresh_list_cb):
         if refresh_list_cb:
             refresh_list_cb()
 
+    def minimize_process(e):
+        close_dlg(e)
+
+    minimize_icon = ft.Container(
+        content=ft.Icon(ft.Icons.REMOVE, size=16, color="white"),
+        width=30,
+        height=30,
+        border=ft.border.all(1, ft.Colors.WHITE54),
+        border_radius=5,
+        alignment=ft.alignment.center,
+        on_click=minimize_process,
+        ink=True,
+        tooltip="Minimize",
+    )
+
+    title_row = ft.Row(
+        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+        controls=[
+            ft.Text(
+                proc.get("name", "Process"),
+                size=20,
+                weight=ft.FontWeight.BOLD,
+                color="onSurface",
+            ),
+            minimize_icon,
+        ],
+    )
+
     def refresh_actions():
         actions_row.controls.clear()
         status = proc.get("status")
         if status == "Running":
-            actions_row.controls.append(ft.TextButton("Minimize", on_click=close_dlg))
             actions_row.controls.append(
                 ft.TextButton("Cancel Process", on_click=cancel_proc)
             )
@@ -204,7 +255,8 @@ def _show_process_details(proc, show_dialog, refresh_list_cb):
 
     def update_loop():
         last_len = len(proc.get("logs", []))
-        while is_running[0]:
+        stopping = False
+        while True:
             if not output_column.page:
                 break
 
@@ -216,18 +268,37 @@ def _show_process_details(proc, show_dialog, refresh_list_cb):
                         ft.Text(line, font_family="monospace", size=12)
                     )
                 last_len = len(current_logs)
-                output_column.update()
+                if output_column.page:
+                    output_column.update()
+                    # Scroll to bottom
+                    output_column.scroll_to(offset=-1, duration=300)
+
+            if stopping:
+                break
 
             if proc.get("status") != "Running":
                 is_running[0] = False
                 refresh_actions()
+                stopping = True
 
             time.sleep(0.5)
+
+        # Final check for logs
+        if output_column.page:
+            current_logs = proc.get("logs", [])
+            if len(current_logs) > last_len:
+                new_lines = current_logs[last_len:]
+                for line in new_lines:
+                    output_column.controls.append(
+                        ft.Text(line, font_family="monospace", size=12)
+                    )
+                output_column.update()
+                output_column.scroll_to(offset=-1, duration=300)
 
     # Start loop if running
     if is_running[0]:
         threading.Thread(target=update_loop, daemon=True).start()
 
     close_func[0] = show_dialog(
-        proc.get("name", "Process"), content_container, [actions_row], dismissible=False
+        title_row, content_container, [actions_row], dismissible=False
     )
