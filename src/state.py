@@ -6,13 +6,23 @@ import datetime
 import subprocess
 import re
 from pathlib import Path
-from constants import *
+from constants import (
+    CARD_DEFAULTS,
+    DAILY_APPS,
+    DAILY_QUOTES,
+    DAILY_TIPS,
+    DAILY_SONGS,
+    CONFIG_FILE,
+    CONFIG_DIR,
+    TRACKING_FILE,
+)
+
 
 # --- State Management ---
 class AppState:
     def __init__(self):
         self.username = "user"
-        self.default_channel = "nixos-24.11"
+        self.default_channel = "nixos-25.11"
         self.confirm_timer = 5
         self.undo_timer = 5
         self.nav_badge_size = 20
@@ -82,8 +92,8 @@ class AppState:
         # Home Page Settings
         self.home_card_config = CARD_DEFAULTS.copy()
         self.carousel_timer = 10
-        self.carousel_glass = True # Default to glassmorphism
-        
+        self.carousel_glass = True  # Default to glassmorphism
+
         # Debug Settings
         self.show_refresh_button = True
 
@@ -137,7 +147,7 @@ class AppState:
 
         self.auto_refresh_ui = False
         self.auto_refresh_interval = 10
-        self.installed_items = {} # pname -> list of {'key': key, 'attrPath': attrPath}
+        self.installed_items = {}  # pname -> list of {'key': key, 'attrPath': attrPath}
 
         self.daily_indices = {"app": 0, "quote": 0, "tip": 0, "song": 0}
         self.last_daily_date = ""
@@ -151,12 +161,8 @@ class AppState:
         self.shell_cart_prefix = "x-terminal-emulator -e"
         self.shell_cart_suffix = ""
 
-        self.available_channels = [
-            "nixos-unstable", "nixos-24.11", "nixos-24.05"
-        ]
-        self.active_channels = [
-            "nixos-unstable", "nixos-24.11"
-        ]
+        self.available_channels = ["nixos-unstable", "nixos-25.11"]
+        self.active_channels = ["nixos-unstable", "nixos-25.11"]
         self.cart_items = []
         self.favourites = []
         self.saved_lists = {}
@@ -180,11 +186,13 @@ class AppState:
     def load_settings(self):
         if os.path.exists(CONFIG_FILE):
             try:
-                with open(CONFIG_FILE, 'r') as f:
+                with open(CONFIG_FILE, "r") as f:
                     data = json.load(f)
                     self.username = data.get("username", "user")
-                    self.default_channel = data.get("default_channel", self.default_channel)
-                    self.theme_mode = "dark" # Enforce Dark Mode
+                    self.default_channel = data.get(
+                        "default_channel", self.default_channel
+                    )
+                    self.theme_mode = "dark"  # Enforce Dark Mode
                     self.theme_color = data.get("theme_color", "blue")
 
                     legacy_timer = data.get("countdown_timer", 5)
@@ -236,7 +244,9 @@ class AppState:
                     self.sync_chip_radius = data.get("sync_chip_radius", True)
 
                     # Fonts
-                    self.global_font_size = data.get("font_size", data.get("global_font_size", 14))
+                    self.global_font_size = data.get(
+                        "font_size", data.get("global_font_size", 14)
+                    )
 
                     self.title_font_size = data.get("title_font_size", 16)
                     self.sync_title_font = data.get("sync_title_font", True)
@@ -258,17 +268,29 @@ class AppState:
                                 saved_card_config[k] = v
                             else:
                                 # Ensure 'h' and 'color' keys exist, using defaults if not
-                                if 'h' not in saved_card_config[k]:
-                                    saved_card_config[k]['h'] = v.get('h', 180)
+                                if "h" not in saved_card_config[k]:
+                                    saved_card_config[k]["h"] = v.get("h", 180)
                                 if "color" not in saved_card_config[k]:
                                     saved_card_config[k]["color"] = v["color"]
                         self.home_card_config = saved_card_config
                     else:
                         self.home_card_config = CARD_DEFAULTS.copy()
-                        if "home_show_app" in data: self.home_card_config["app"]["visible"] = data["home_show_app"]
-                        if "home_show_quote" in data: self.home_card_config["quote"]["visible"] = data["home_show_quote"]
-                        if "home_show_tip" in data: self.home_card_config["tip"]["visible"] = data["home_show_tip"]
-                        if "home_show_song" in data: self.home_card_config["song"]["visible"] = data["home_show_song"]
+                        if "home_show_app" in data:
+                            self.home_card_config["app"]["visible"] = data[
+                                "home_show_app"
+                            ]
+                        if "home_show_quote" in data:
+                            self.home_card_config["quote"]["visible"] = data[
+                                "home_show_quote"
+                            ]
+                        if "home_show_tip" in data:
+                            self.home_card_config["tip"]["visible"] = data[
+                                "home_show_tip"
+                            ]
+                        if "home_show_song" in data:
+                            self.home_card_config["song"]["visible"] = data[
+                                "home_show_song"
+                            ]
 
                     # Equalize card heights as per user request
                     if self.home_card_config:
@@ -280,37 +302,50 @@ class AppState:
                         if "song" in self.home_card_config:
                             self.home_card_config["song"]["h"] = target_h
 
-
                     self.use_mastodon_quote = data.get("use_mastodon_quote", True)
-                    self.quote_mastodon_server = data.get("quote_mastodon_server", "mstdn.social")
-                    self.quote_mastodon_account = data.get("quote_mastodon_account", "vivekanandanks")
+                    self.quote_mastodon_server = data.get(
+                        "quote_mastodon_server", "mstdn.social"
+                    )
+                    self.quote_mastodon_account = data.get(
+                        "quote_mastodon_account", "vivekanandanks"
+                    )
                     self.quote_mastodon_tag = data.get("quote_mastodon_tag", "mha")
                     self.quote_style_italic = data.get("quote_style_italic", True)
                     self.quote_style_bold = data.get("quote_style_bold", True)
                     # self.last_fetched_quote = data.get("last_fetched_quote", None)
 
                     self.app_use_mastodon = data.get("app_use_mastodon", False)
-                    self.app_mastodon_server = data.get("app_mastodon_server", "mstdn.social")
+                    self.app_mastodon_server = data.get(
+                        "app_mastodon_server", "mstdn.social"
+                    )
                     self.app_mastodon_account = data.get("app_mastodon_account", "")
                     self.app_mastodon_tag = data.get("app_mastodon_tag", "")
                     # self.last_fetched_app = data.get("last_fetched_app", None)
 
                     self.tip_use_mastodon = data.get("tip_use_mastodon", False)
-                    self.tip_mastodon_server = data.get("tip_mastodon_server", "mstdn.social")
+                    self.tip_mastodon_server = data.get(
+                        "tip_mastodon_server", "mstdn.social"
+                    )
                     self.tip_mastodon_account = data.get("tip_mastodon_account", "")
                     self.tip_mastodon_tag = data.get("tip_mastodon_tag", "")
                     # self.last_fetched_tip = data.get("last_fetched_tip", None)
 
                     self.song_use_mastodon = data.get("song_use_mastodon", False)
-                    self.song_mastodon_server = data.get("song_mastodon_server", "mstdn.social")
+                    self.song_mastodon_server = data.get(
+                        "song_mastodon_server", "mstdn.social"
+                    )
                     self.song_mastodon_account = data.get("song_mastodon_account", "")
                     self.song_mastodon_tag = data.get("song_mastodon_tag", "")
                     # self.last_fetched_song = data.get("last_fetched_song", None)
                     # self.default_song_cache = data.get("default_song_cache", None)
 
                     self.carousel_use_mastodon = data.get("carousel_use_mastodon", True)
-                    self.carousel_mastodon_server = data.get("carousel_mastodon_server", "mstdn.social")
-                    self.carousel_mastodon_account = data.get("carousel_mastodon_account", "")
+                    self.carousel_mastodon_server = data.get(
+                        "carousel_mastodon_server", "mstdn.social"
+                    )
+                    self.carousel_mastodon_account = data.get(
+                        "carousel_mastodon_account", ""
+                    )
                     self.carousel_mastodon_tag = data.get("carousel_mastodon_tag", "")
                     # self.last_fetched_carousel = data.get("last_fetched_carousel", None)
 
@@ -326,15 +361,30 @@ class AppState:
                     # Experimental
                     self.fetch_icons = data.get("fetch_icons", True)
                     self.icon_size = data.get("icon_size", 48)
-                    self.channel_selector_style = data.get("channel_selector_style", "plain")
+                    self.channel_selector_style = data.get(
+                        "channel_selector_style", "plain"
+                    )
 
-                    self.available_channels = data.get("available_channels", self.available_channels)
-                    self.active_channels = data.get("active_channels", self.active_channels)
+                    self.available_channels = data.get(
+                        "available_channels", self.available_channels
+                    )
+                    self.active_channels = data.get(
+                        "active_channels", self.active_channels
+                    )
 
-                    self.shell_single_prefix = data.get("shell_single_prefix", data.get("shell_prefix", "x-terminal-emulator -e"))
-                    self.shell_single_suffix = data.get("shell_single_suffix", data.get("shell_suffix", ""))
-                    self.shell_cart_prefix = data.get("shell_cart_prefix", self.shell_single_prefix)
-                    self.shell_cart_suffix = data.get("shell_cart_suffix", self.shell_single_suffix)
+                    self.shell_single_prefix = data.get(
+                        "shell_single_prefix",
+                        data.get("shell_prefix", "x-terminal-emulator -e"),
+                    )
+                    self.shell_single_suffix = data.get(
+                        "shell_single_suffix", data.get("shell_suffix", "")
+                    )
+                    self.shell_cart_prefix = data.get(
+                        "shell_cart_prefix", self.shell_single_prefix
+                    )
+                    self.shell_cart_suffix = data.get(
+                        "shell_cart_suffix", self.shell_single_suffix
+                    )
 
                     self.cart_items = data.get("cart_items", [])
                     self.favourites = data.get("favourites", [])
@@ -365,7 +415,6 @@ class AppState:
                 "last_settings_category": self.last_settings_category,
                 "last_settings_scroll": self.last_settings_scroll,
                 "last_settings_expanded": self.last_settings_expanded,
-
                 "floating_nav": self.floating_nav,
                 "adaptive_nav": self.adaptive_nav,
                 "glass_nav": self.glass_nav,
@@ -373,7 +422,6 @@ class AppState:
                 "nav_bar_width": self.nav_bar_width,
                 "nav_icon_spacing": self.nav_icon_spacing,
                 "sync_nav_spacing": self.sync_nav_spacing,
-
                 "global_radius": self.global_radius,
                 "nav_radius": self.nav_radius,
                 "sync_nav_radius": self.sync_nav_radius,
@@ -389,7 +437,6 @@ class AppState:
                 "sync_footer_radius": self.sync_footer_radius,
                 "chip_radius": self.chip_radius,
                 "sync_chip_radius": self.sync_chip_radius,
-
                 "global_font_size": self.global_font_size,
                 "title_font_size": self.title_font_size,
                 "sync_title_font": self.sync_title_font,
@@ -399,7 +446,6 @@ class AppState:
                 "sync_small_font": self.sync_small_font,
                 "nav_font_size": self.nav_font_size,
                 "sync_nav_font": self.sync_nav_font,
-
                 "home_card_config": self.home_card_config,
                 "use_mastodon_quote": self.use_mastodon_quote,
                 "quote_mastodon_server": self.quote_mastodon_server,
@@ -408,45 +454,37 @@ class AppState:
                 "quote_style_italic": self.quote_style_italic,
                 "quote_style_bold": self.quote_style_bold,
                 "last_fetched_quote": self.last_fetched_quote,
-
                 "app_use_mastodon": self.app_use_mastodon,
                 "app_mastodon_server": self.app_mastodon_server,
                 "app_mastodon_account": self.app_mastodon_account,
                 "app_mastodon_tag": self.app_mastodon_tag,
                 "last_fetched_app": self.last_fetched_app,
-
                 "tip_use_mastodon": self.tip_use_mastodon,
                 "tip_mastodon_server": self.tip_mastodon_server,
                 "tip_mastodon_account": self.tip_mastodon_account,
                 "tip_mastodon_tag": self.tip_mastodon_tag,
                 "last_fetched_tip": self.last_fetched_tip,
-
                 "song_use_mastodon": self.song_use_mastodon,
                 "song_mastodon_server": self.song_mastodon_server,
                 "song_mastodon_account": self.song_mastodon_account,
                 "song_mastodon_tag": self.song_mastodon_tag,
                 "last_fetched_song": self.last_fetched_song,
                 "default_song_cache": self.default_song_cache,
-
                 "carousel_use_mastodon": self.carousel_use_mastodon,
                 "carousel_mastodon_server": self.carousel_mastodon_server,
                 "carousel_mastodon_account": self.carousel_mastodon_account,
                 "carousel_mastodon_tag": self.carousel_mastodon_tag,
                 "last_fetched_carousel": self.last_fetched_carousel,
-
                 "auto_refresh_ui": self.auto_refresh_ui,
                 "auto_refresh_interval": self.auto_refresh_interval,
-
                 "daily_indices": self.daily_indices,
                 "last_daily_date": self.last_daily_date,
                 "carousel_timer": self.carousel_timer,
                 "carousel_glass": self.carousel_glass,
                 "show_refresh_button": self.show_refresh_button,
-
                 "fetch_icons": self.fetch_icons,
                 "icon_size": self.icon_size,
                 "channel_selector_style": self.channel_selector_style,
-
                 "available_channels": self.available_channels,
                 "active_channels": self.active_channels,
                 "shell_single_prefix": self.shell_single_prefix,
@@ -456,9 +494,9 @@ class AppState:
                 "cart_items": self.cart_items,
                 "favourites": self.favourites,
                 "saved_lists": self.saved_lists,
-                "recent_activity": self.recent_activity
+                "recent_activity": self.recent_activity,
             }
-            with open(CONFIG_FILE, 'w') as f:
+            with open(CONFIG_FILE, "w") as f:
                 json.dump(data, f, indent=4)
         except Exception as e:
             print(f"Error saving settings: {e}")
@@ -466,21 +504,21 @@ class AppState:
     # --- Scalable Font Logic ---
     def get_font_size(self, component):
         # Default scaling factors relative to global
-        if component == 'title':
+        if component == "title":
             if self.sync_title_font:
                 return int(self.global_font_size * 1.15)
             return self.title_font_size
-        elif component == 'body':
+        elif component == "body":
             if self.sync_body_font:
                 return int(self.global_font_size * 1.0)
             return self.body_font_size
-        elif component == 'small':
+        elif component == "small":
             if self.sync_small_font:
                 return int(self.global_font_size * 0.85)
             return self.small_font_size
-        elif component == 'nav':
+        elif component == "nav":
             if self.sync_nav_font:
-                return int(self.get_font_size('small') * 0.9)
+                return int(self.get_font_size("small") * 0.9)
             return self.nav_font_size
 
         return self.global_font_size
@@ -489,19 +527,23 @@ class AppState:
         return int(self.global_font_size * scale)
 
     def get_radius(self, component):
-        if component == 'nav':
+        if component == "nav":
             return self.global_radius if self.sync_nav_radius else self.nav_radius
-        elif component == 'card':
+        elif component == "card":
             return self.global_radius if self.sync_card_radius else self.card_radius
-        elif component == 'button':
+        elif component == "button":
             return self.global_radius if self.sync_button_radius else self.button_radius
-        elif component == 'search':
+        elif component == "search":
             return self.global_radius if self.sync_search_radius else self.search_radius
-        elif component == 'selector':
-            return self.global_radius if self.sync_selector_radius else self.selector_radius
-        elif component == 'footer':
+        elif component == "selector":
+            return (
+                self.global_radius
+                if self.sync_selector_radius
+                else self.selector_radius
+            )
+        elif component == "footer":
             return self.global_radius if self.sync_footer_radius else self.footer_radius
-        elif component == 'chip':
+        elif component == "chip":
             return self.global_radius if self.sync_chip_radius else self.chip_radius
         return self.global_radius
 
@@ -520,7 +562,11 @@ class AppState:
             if channel_name in self.active_channels:
                 self.active_channels.remove(channel_name)
             if self.default_channel == channel_name:
-                self.default_channel = self.available_channels[0] if self.available_channels else "nixos-unstable"
+                self.default_channel = (
+                    self.available_channels[0]
+                    if self.available_channels
+                    else "nixos-unstable"
+                )
             self.save_settings()
             return True
         return False
@@ -542,21 +588,27 @@ class AppState:
     def is_in_cart(self, package, channel):
         pkg_id = self._get_pkg_id(package)
         for item in self.cart_items:
-            if self._get_pkg_id(item['package']) == pkg_id and item['channel'] == channel:
+            if (
+                self._get_pkg_id(item["package"]) == pkg_id
+                and item["channel"] == channel
+            ):
                 return True
         return False
 
     def add_to_cart(self, package, channel):
         if self.is_in_cart(package, channel):
             return False
-        self.cart_items.append({'package': package, 'channel': channel})
+        self.cart_items.append({"package": package, "channel": channel})
         self.save_settings()
         return True
 
     def remove_from_cart(self, package, channel):
         pkg_id = self._get_pkg_id(package)
         for i, item in enumerate(self.cart_items):
-            if self._get_pkg_id(item['package']) == pkg_id and item['channel'] == channel:
+            if (
+                self._get_pkg_id(item["package"]) == pkg_id
+                and item["channel"] == channel
+            ):
                 del self.cart_items[i]
                 self.save_settings()
                 return True
@@ -586,10 +638,11 @@ class AppState:
     def add_to_history(self, package, channel):
         pkg_id = self._get_pkg_id(package)
         self.recent_activity = [
-            item for item in self.recent_activity
-            if self._get_pkg_id(item['package']) != pkg_id or item['channel'] != channel
+            item
+            for item in self.recent_activity
+            if self._get_pkg_id(item["package"]) != pkg_id or item["channel"] != channel
         ]
-        self.recent_activity.insert(0, {'package': package, 'channel': channel})
+        self.recent_activity.insert(0, {"package": package, "channel": channel})
         self.recent_activity = self.recent_activity[:5]
         self.save_settings()
 
@@ -600,7 +653,10 @@ class AppState:
     def is_favourite(self, package, channel):
         pkg_id = self._get_pkg_id(package)
         for item in self.favourites:
-            if self._get_pkg_id(item['package']) == pkg_id and item['channel'] == channel:
+            if (
+                self._get_pkg_id(item["package"]) == pkg_id
+                and item["channel"] == channel
+            ):
                 return True
         return False
 
@@ -608,7 +664,10 @@ class AppState:
         pkg_id = self._get_pkg_id(package)
         idx = -1
         for i, item in enumerate(self.favourites):
-            if self._get_pkg_id(item['package']) == pkg_id and item['channel'] == channel:
+            if (
+                self._get_pkg_id(item["package"]) == pkg_id
+                and item["channel"] == channel
+            ):
                 idx = i
                 break
 
@@ -616,7 +675,7 @@ class AppState:
             del self.favourites[idx]
             action = "removed"
         else:
-            self.favourites.append({'package': package, 'channel': channel})
+            self.favourites.append({"package": package, "channel": channel})
             action = "added"
 
         self.save_settings()
@@ -627,7 +686,10 @@ class AppState:
         containing = []
         for list_name, items in self.saved_lists.items():
             for item in items:
-                if self._get_pkg_id(item['package']) == pkg_id and item['channel'] == channel:
+                if (
+                    self._get_pkg_id(item["package"]) == pkg_id
+                    and item["channel"] == channel
+                ):
                     containing.append(list_name)
                     break
         return containing
@@ -639,14 +701,17 @@ class AppState:
         items = self.saved_lists[list_name]
         idx = -1
         for i, item in enumerate(items):
-             if self._get_pkg_id(item['package']) == pkg_id and item['channel'] == channel:
-                 idx = i
-                 break
+            if (
+                self._get_pkg_id(item["package"]) == pkg_id
+                and item["channel"] == channel
+            ):
+                idx = i
+                break
         if idx >= 0:
             del items[idx]
             msg = f"Removed from {list_name}"
         else:
-            items.append({'package': pkg, 'channel': channel})
+            items.append({"package": pkg, "channel": channel})
             msg = f"Added to {list_name}"
         self.saved_lists[list_name] = items
         self.save_settings()
@@ -659,7 +724,7 @@ class AppState:
     def load_tracking(self):
         if os.path.exists(TRACKING_FILE):
             try:
-                with open(TRACKING_FILE, 'r') as f:
+                with open(TRACKING_FILE, "r") as f:
                     self.tracked_installs = json.load(f)
             except Exception as e:
                 print(f"Error loading tracking: {e}")
@@ -668,7 +733,7 @@ class AppState:
     def save_tracking(self):
         try:
             Path(CONFIG_DIR).mkdir(parents=True, exist_ok=True)
-            with open(TRACKING_FILE, 'w') as f:
+            with open(TRACKING_FILE, "w") as f:
                 json.dump(self.tracked_installs, f, indent=4)
         except Exception as e:
             print(f"Error saving tracking: {e}")
@@ -676,7 +741,18 @@ class AppState:
     def _get_track_key(self, pname, channel):
         return f"{pname}::{channel}"
 
-    def track_install(self, pname, channel, attr_name=None, version=None, description=None, homepage=None, license_set=None, source_url=None, programs=None):
+    def track_install(
+        self,
+        pname,
+        channel,
+        attr_name=None,
+        version=None,
+        description=None,
+        homepage=None,
+        license_set=None,
+        source_url=None,
+        programs=None,
+    ):
         key = self._get_track_key(pname, channel)
         self.tracked_installs[key] = {
             "pname": pname,
@@ -688,7 +764,7 @@ class AppState:
             "license": license_set,
             "source": source_url,
             "programs": programs,
-            "installed_at": datetime.datetime.now().isoformat()
+            "installed_at": datetime.datetime.now().isoformat(),
         }
         self.save_tracking()
 
@@ -699,7 +775,7 @@ class AppState:
             self.save_tracking()
 
     def is_tracked(self, pname, channel):
-        # We might need fuzzy matching if channel versions differ slightly, 
+        # We might need fuzzy matching if channel versions differ slightly,
         # but for now strict match on what we installed.
         key = self._get_track_key(pname, channel)
         return key in self.tracked_installs
@@ -724,26 +800,26 @@ class AppState:
                 ["nix", "profile", "list", "--json"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
             )
             if result.returncode != 0:
                 return
-            
+
             data = json.loads(result.stdout)
             elements = data.get("elements", {})
             new_items = {}
             installed_pnames = set()
-            
+
             for key, info in elements.items():
                 store_paths = info.get("storePaths", [])
                 attr_path = info.get("attrPath", "")
                 if not store_paths:
                     continue
-                
+
                 # Heuristic: Pick the store path that looks most like the package main path
                 # Usually it ends with the version number.
                 best_store_path = store_paths[0]
-                version_match_regex = re.compile(r'-(\d+(\.\d+)*[a-zA-Z0-9_\.]*)$')
+                version_match_regex = re.compile(r"-(\d+(\.\d+)*[a-zA-Z0-9_\.]*)$")
 
                 best_version = "?"
                 best_name = "?"
@@ -753,42 +829,44 @@ class AppState:
                 for path in store_paths:
                     basename = os.path.basename(path)
                     # Remove hash (32 chars) + dash = 33 chars
-                    if len(basename) > 33 and basename[32] == '-':
-                         rest = basename[33:]
+                    if len(basename) > 33 and basename[32] == "-":
+                        rest = basename[33:]
                     else:
-                         rest = basename
-                    
+                        rest = basename
+
                     # Check for version match at end
                     match = version_match_regex.search(rest)
                     if match:
-                         best_store_path = path
-                         best_version = match.group(1)
-                         best_name = rest[:match.start()]
-                         found_version = True
-                         break # Found a good one
-                
+                        best_store_path = path
+                        best_version = match.group(1)
+                        best_name = rest[: match.start()]
+                        found_version = True
+                        break  # Found a good one
+
                 if not found_version:
-                     # Fallback to first path logic if no clear version found
-                     basename = os.path.basename(best_store_path)
-                     if len(basename) > 33 and basename[32] == '-':
-                         rest = basename[33:]
-                     else:
-                         rest = basename
-                     
-                     # Simple split fallback
-                     match = re.search(r'-(\d)', rest)
-                     if match:
-                        best_name = rest[:match.start()]
-                        best_version = rest[match.start()+1:]
-                     else:
+                    # Fallback to first path logic if no clear version found
+                    basename = os.path.basename(best_store_path)
+                    if len(basename) > 33 and basename[32] == "-":
+                        rest = basename[33:]
+                    else:
+                        rest = basename
+
+                    # Simple split fallback
+                    match = re.search(r"-(\d)", rest)
+                    if match:
+                        best_name = rest[: match.start()]
+                        best_version = rest[match.start() + 1 :]
+                    else:
                         best_name = rest
                         best_version = "?"
 
                 if best_name not in new_items:
                     new_items[best_name] = []
-                new_items[best_name].append({'key': key, 'attrPath': attr_path, 'version': best_version})
+                new_items[best_name].append(
+                    {"key": key, "attrPath": attr_path, "version": best_version}
+                )
                 installed_pnames.add(best_name)
-            
+
             self.installed_items = new_items
 
             # Reconcile Tracking: Remove tracked items that are no longer installed
@@ -797,7 +875,7 @@ class AppState:
                 pname = info.get("pname")
                 if pname not in installed_pnames:
                     keys_to_remove.append(key)
-            
+
             if keys_to_remove:
                 for key in keys_to_remove:
                     del self.tracked_installs[key]
@@ -810,27 +888,28 @@ class AppState:
         # 1. Try to get version from tracking if available (most accurate for what we installed)
         tracked_channel = self.get_tracked_channel(pname)
         if tracked_channel:
-             key = self._get_track_key(pname, tracked_channel)
-             info = self.tracked_installs.get(key)
-             if info and info.get("version"):
-                 return info.get("version")
+            key = self._get_track_key(pname, tracked_channel)
+            info = self.tracked_installs.get(key)
+            if info and info.get("version"):
+                return info.get("version")
 
         # 2. Fallback to parsed version from cache (for external apps)
         if pname in self.installed_items and self.installed_items[pname]:
-            return self.installed_items[pname][0].get('version', '?')
+            return self.installed_items[pname][0].get("version", "?")
         return None
 
     def is_package_installed(self, pname, search_attr_name=None):
         if pname not in self.installed_items:
             return False
-        
+
         if not search_attr_name:
             return True
-            
+
         installed_list = self.installed_items[pname]
         for item in installed_list:
-            attr = item['attrPath']
-            if not attr: continue
+            attr = item["attrPath"]
+            if not attr:
+                continue
             # Check suffix
             if attr.endswith(f".{search_attr_name}") or attr == search_attr_name:
                 return True
@@ -839,8 +918,9 @@ class AppState:
     def get_element_key(self, pname):
         # Return the first element key found for this pname
         if pname in self.installed_items and self.installed_items[pname]:
-            return self.installed_items[pname][0]['key']
+            return self.installed_items[pname][0]["key"]
         return None
+
 
 state = AppState()
 state.refresh_installed_cache()

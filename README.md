@@ -1,5 +1,17 @@
 # How to try this app?
-Clone this repo, cd into the folder and then just run:
+
+1) For nixos:
+```bash
+nix run github:vivekanandan-ks/all-might/feat-appbuild --impure --no-write-lock-file
+```
+
+2) For other distros:
+```bash
+nix run github:vivekanandan-ks/all-might/feat-appbuild#non-nixos --impure --no-write-lock-file
+```
+
+3) Manually through shell:
+Clone the repo and cd into it. Gaze at some code and flake.nix files and then run:
 ```bash
 nix develop -c python src/main.py
 ```
@@ -48,9 +60,15 @@ IUKUK (will reveal the detailed reason later)
 # Tech Stack
 I want the project to be cross platformic and I'm little familiar with python. So I'm using the flet framework for this as for now. Who knows some crazy person will do a lightweight or rust rewrite and submit a PR and it's more than welcome. I love options, so probably different UI frameworks can also be done in parallel and users can have option to install whatever the framework they like, so that project grows with unified efforts than diverging. Of course with nix it's greatly helpful to do those.
 
-# Roadmap
+# Short term goals to do:
 * A Basic working app (almost done)
+* Upgrades - individual apps and all apps
 * Features getting added one by one
+* Home manager implementation
+
+# How installation is done?
+* For the intial working design I used nix profile install method (I hate this method coz it's imperative). It works fine though.
+* But i'm planning to implement home manager soon. So that on first install of the app you'll have option for both methods probably to choose from. Home manager will bring more cool features.
 
 # What's the process of making this app?
 I got my hands on Gemini 3 pro model. So wanted to try bilding something which I had in my mind recently. So though all the design, features, customization are totally my creativity, still this app is purely VIBE CODED. i think of this as a design which also works :-)

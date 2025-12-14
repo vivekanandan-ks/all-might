@@ -9,33 +9,69 @@ TRACKING_FILE = os.path.join(CONFIG_DIR, "installed.json")
 
 # --- Mock Data for Daily Digest ---
 DAILY_APPS = [
-    {"pname": "firefox", "desc": "A free and open-source web browser developed by the Mozilla Foundation."},
+    {
+        "pname": "firefox",
+        "desc": "A free and open-source web browser developed by the Mozilla Foundation.",
+    },
     {"pname": "neovim", "desc": "Hyperextensible Vim-based text editor."},
     {"pname": "htop", "desc": "An interactive process viewer."},
     {"pname": "git", "desc": "Distributed version control system."},
     {"pname": "vscode", "desc": "Code editing. Redefined."},
     {"pname": "vlc", "desc": "The ultimate media player."},
-    {"pname": "obs-studio", "desc": "Free and open source software for video recording and live streaming."},
+    {
+        "pname": "obs-studio",
+        "desc": "Free and open source software for video recording and live streaming.",
+    },
     {"pname": "gimp", "desc": "GNU Image Manipulation Program."},
-    {"pname": "ripgrep", "desc": "A line-oriented search tool that recursively searches the current directory."},
-    {"pname": "bat", "desc": "A cat(1) clone with wings."}
+    {
+        "pname": "ripgrep",
+        "desc": "A line-oriented search tool that recursively searches the current directory.",
+    },
+    {"pname": "bat", "desc": "A cat(1) clone with wings."},
 ]
 
 DAILY_QUOTES = [
-    {"text": "The computer was born to solve problems that did not exist before.", "author": "Bill Gates"},
+    {
+        "text": "The computer was born to solve problems that did not exist before.",
+        "author": "Bill Gates",
+    },
     {"text": "Talk is cheap. Show me the code.", "author": "Linus Torvalds"},
-    {"text": "Software is like sex: it's better when it's free.", "author": "Linus Torvalds"},
+    {
+        "text": "Software is like sex: it's better when it's free.",
+        "author": "Linus Torvalds",
+    },
     {"text": "It's not a bug – it's an undocumented feature.", "author": "Anonymous"},
-    {"text": "First, solve the problem. Then, write the code.", "author": "John Johnson"},
-    {"text": "Experience is the name everyone gives to their mistakes.", "author": "Oscar Wilde"}
+    {
+        "text": "First, solve the problem. Then, write the code.",
+        "author": "John Johnson",
+    },
+    {
+        "text": "Experience is the name everyone gives to their mistakes.",
+        "author": "Oscar Wilde",
+    },
 ]
 
 DAILY_TIPS = [
-    {"title": "Reproducibility", "code": "Nix ensures that packages work the same way on every machine, solving 'works on my machine' issues."},
-    {"title": "Atomic Upgrades", "code": "Upgrades and rollbacks are atomic. If an upgrade fails, you can always roll back to the previous state."},
-    {"title": "Nix Shell", "code": "Use 'nix-shell -p package' to use a tool temporarily without installing it into your user profile."},
-    {"title": "Garbage Collection", "code": "Run 'nix-collect-garbage' to free up disk space by removing unused packages from the Nix store."},
-    {"title": "Declarative Config", "code": "NixOS allows you to define your entire system configuration in a single file (configuration.nix)."}
+    {
+        "title": "Reproducibility",
+        "code": "Nix ensures that packages work the same way on every machine, solving 'works on my machine' issues.",
+    },
+    {
+        "title": "Atomic Upgrades",
+        "code": "Upgrades and rollbacks are atomic. If an upgrade fails, you can always roll back to the previous state.",
+    },
+    {
+        "title": "Nix Shell",
+        "code": "Use 'nix-shell -p package' to use a tool temporarily without installing it into your user profile.",
+    },
+    {
+        "title": "Garbage Collection",
+        "code": "Run 'nix-collect-garbage' to free up disk space by removing unused packages from the Nix store.",
+    },
+    {
+        "title": "Declarative Config",
+        "code": "NixOS allows you to define your entire system configuration in a single file (configuration.nix).",
+    },
 ]
 
 DAILY_SONGS = [
@@ -44,15 +80,40 @@ DAILY_SONGS = [
     {"title": "Instant Crush", "artist": "Daft Punk"},
     {"title": "Technologic", "artist": "Daft Punk"},
     {"title": "Computer Love", "artist": "Kraftwerk"},
-    {"title": "Resonance", "artist": "Home"}
+    {"title": "Resonance", "artist": "Home"},
 ]
 
 CAROUSEL_DATA = [
-    {"title": "Search Packages", "desc": "Find any package from nixpkgs. Search by name or description.", "color": ft.Colors.BLUE, "icon": ft.Icons.SEARCH},
-    {"title": "Manage Lists", "desc": "Create Favorites or custom lists to organize your software.", "color": ft.Colors.GREEN, "icon": ft.Icons.LIST},
-    {"title": "Try in Shell", "desc": "Use 'nix-shell' to try packages without installing them permanently.", "color": ft.Colors.PURPLE, "icon": ft.Icons.TERMINAL},
-    {"title": "Inspect Binaries", "desc": "View the binaries installed by a package in the card details.", "color": ft.Colors.ORANGE, "icon": ft.Icons.CODE},
-    {"title": "Build Commands", "desc": "Copy install commands for NixOS, Home Manager, or generic Nix.", "color": ft.Colors.RED, "icon": ft.Icons.COPY},
+    {
+        "title": "Search Packages",
+        "desc": "Find any package from nixpkgs. Search by name or description.",
+        "color": ft.Colors.BLUE,
+        "icon": ft.Icons.SEARCH,
+    },
+    {
+        "title": "Manage Lists",
+        "desc": "Create Favorites or custom lists to organize your software.",
+        "color": ft.Colors.GREEN,
+        "icon": ft.Icons.LIST,
+    },
+    {
+        "title": "Try in Shell",
+        "desc": "Use 'nix-shell' to try packages without installing them permanently.",
+        "color": ft.Colors.PURPLE,
+        "icon": ft.Icons.TERMINAL,
+    },
+    {
+        "title": "Inspect Binaries",
+        "desc": "View the binaries installed by a package in the card details.",
+        "color": ft.Colors.ORANGE,
+        "icon": ft.Icons.CODE,
+    },
+    {
+        "title": "Build Commands",
+        "desc": "Copy install commands for NixOS, Home Manager, or generic Nix.",
+        "color": ft.Colors.RED,
+        "icon": ft.Icons.COPY,
+    },
 ]
 
 # Mapping for string color names to Flet colors
@@ -66,7 +127,7 @@ COLOR_NAME_MAP = {
     "red": ft.Colors.RED,
     "pink": ft.Colors.PINK,
     "purple": ft.Colors.PURPLE,
-    "blue_grey": ft.Colors.BLUE_GREY
+    "blue_grey": ft.Colors.BLUE_GREY,
 }
 
 # Default Configuration for Cards

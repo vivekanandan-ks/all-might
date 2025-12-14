@@ -1,4 +1,3 @@
-import subprocess
 import json
 import urllib.request
 import base64
@@ -7,6 +6,7 @@ import re
 from state import state
 
 # --- Logic: Search ---
+
 
 def execute_nix_search(query, channel):
     if not query:
@@ -21,7 +21,7 @@ def execute_nix_search(query, channel):
     # nh logic: if channel starts with nixos-, use it. if it's unstable, use nixos-unstable.
     # The URL format in nh is: https://search.nixos.org/backend/latest-44-{channel}/_search
     # Example: latest-44-nixos-unstable or latest-44-nixos-24.05
-    
+
     url = f"https://search.nixos.org/backend/latest-44-{channel}/_search"
 
     # Construct the ElasticSearch query matching nh's implementation
@@ -30,11 +30,7 @@ def execute_nix_search(query, channel):
         "size": limit_val,
         "query": {
             "bool": {
-                "filter": {
-                    "term": {
-                        "type": "package"
-                    }
-                },
+                "filter": {"term": {"type": "package"}},
                 "must": {
                     "dis_max": {
                         "tie_breaker": 0.7,
@@ -53,28 +49,28 @@ def execute_nix_search(query, channel):
                                         "package_longDescription^1",
                                         "package_longDescription.*^0.6",
                                         "flake_name^0.5",
-                                        "flake_name.*^0.3"
+                                        "flake_name.*^0.3",
                                     ],
                                     "query": query,
                                     "type": "cross_fields",
                                     "analyzer": "whitespace",
                                     "auto_generate_synonyms_phrase_query": False,
-                                    "operator": "and"
+                                    "operator": "and",
                                 }
                             },
                             {
                                 "wildcard": {
                                     "package_attr_name": {
                                         "value": f"*{query}*",
-                                        "case_insensitive": True
+                                        "case_insensitive": True,
                                     }
                                 }
-                            }
-                        ]
+                            },
+                        ],
                     }
-                }
+                },
             }
-        }
+        },
     }
 
     # Auth credentials from nh source
@@ -85,18 +81,18 @@ def execute_nix_search(query, channel):
 
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": "nh/0.0.0", # Mimic nh
-        "Authorization": f"Basic {b64_auth}"
+        "User-Agent": "nh/0.0.0",  # Mimic nh
+        "Authorization": f"Basic {b64_auth}",
     }
 
     try:
         req = urllib.request.Request(
-            url, 
-            data=json.dumps(query_dsl).encode('utf-8'), 
-            headers=headers, 
-            method="POST"
+            url,
+            data=json.dumps(query_dsl).encode("utf-8"),
+            headers=headers,
+            method="POST",
         )
-        
+
         with urllib.request.urlopen(req, timeout=10) as response:
             if response.status != 200:
                 print(f"Nix Search HTTP Error: {response.status}")
@@ -104,7 +100,7 @@ def execute_nix_search(query, channel):
 
             response_body = response.read()
             data = json.loads(response_body)
-            
+
             # The 'hits' array contains the documents in '_source'
             hits = data.get("hits", {}).get("hits", [])
             raw_results = [hit["_source"] for hit in hits]
@@ -116,7 +112,7 @@ def execute_nix_search(query, channel):
                 pname = pkg.get("package_pname", "")
                 pversion = pkg.get("package_pversion", "")
                 sig = (pname, pversion)
-                
+
                 if sig not in seen:
                     seen.add(sig)
                     unique_results.append(pkg)
@@ -127,108 +123,109 @@ def execute_nix_search(query, channel):
         print(f"Nix Search Failed: {e}")
         return [{"error": f"Execution Error: {str(e)}"}]
 
+
 def get_mastodon_feed(account, tag, limit=5, server="mstdn.social"):
     clean_account = account.strip()
     clean_tag = tag.strip()
     clean_server = server.strip() if server else "mstdn.social"
-    
+
     url = f"https://{clean_server}/@{clean_account}/tagged/{clean_tag}.rss"
-    
+
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
 
     try:
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=10) as response:
             rss_content = response.read()
-            
+
         root = ET.fromstring(rss_content)
-        
+
         # RSS structure: rss > channel > item
         channel = root.find("channel")
         if channel is None:
             return []
-            
+
         items = channel.findall("item")
         feed_data = []
-        
+
         for item in items[:limit]:
             description_elem = item.find("description")
             link_elem = item.find("link")
             pub_date_elem = item.find("pubDate")
-            
+
             description = description_elem.text if description_elem is not None else ""
             link = link_elem.text if link_elem is not None else ""
             pub_date = pub_date_elem.text if pub_date_elem is not None else ""
-            
+
             # Clean HTML from description
             # Replace <br> and <p> with newlines
-            description = re.sub(r'<br\s*/?>|</p>', '\n', description)
+            description = re.sub(r"<br\s*/?>|</p>", "\n", description)
             # Remove all other HTML tags
-            description = re.sub(r'<[^>]+>', '', description)
+            description = re.sub(r"<[^>]+>", "", description)
             # Trim whitespace
             description = description.strip()
-            
+
             if description:
-                feed_data.append({
-                    "text": description,
-                    "link": link,
-                    "author": f"@{clean_account}",
-                    "date": pub_date
-                })
-                
+                feed_data.append(
+                    {
+                        "text": description,
+                        "link": link,
+                        "author": f"@{clean_account}",
+                        "date": pub_date,
+                    }
+                )
+
         return feed_data
 
     except Exception as e:
         print(f"Error fetching Mastodon feed: {e}")
         return None
 
+
 def fetch_opengraph_data(url):
-
     try:
-
         req = urllib.request.Request(
-
-            url, 
-
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            },
         )
 
         with urllib.request.urlopen(req, timeout=10) as response:
+            html_content = response.read().decode("utf-8", errors="ignore")
 
-            html_content = response.read().decode('utf-8', errors='ignore')
+        title_match = re.search(
+            r'<meta\s+property="og:title"\s+content="([^"]+)"',
+            html_content,
+            re.IGNORECASE,
+        )
 
-            
-
-        title_match = re.search(r'<meta\s+property="og:title"\s+content="([^"]+)"', html_content, re.IGNORECASE)
-
-        image_match = re.search(r'<meta\s+property="og:image"\s+content="([^"]+)"', html_content, re.IGNORECASE)
-
-        
+        image_match = re.search(
+            r'<meta\s+property="og:image"\s+content="([^"]+)"',
+            html_content,
+            re.IGNORECASE,
+        )
 
         title = title_match.group(1) if title_match else "Unknown Title"
 
         image = image_match.group(1) if image_match else None
 
-        
-
         # Clean title (sometimes song.link adds "on Service")
         # But raw title is probably fine.
-        
-        return {
-            "title": title,
-            "image": image,
-            "url": url
-        }
+
+        return {"title": title, "image": image, "url": url}
     except Exception as e:
         print(f"Error fetching OpenGraph data: {e}")
         return None
 
+
 def get_mastodon_quote(account, tag, server="mstdn.social"):
     # Fetch more items to find one that matches the filter criteria
     feed = get_mastodon_feed(account, tag, limit=10, server=server)
-    if feed is None: return None
-    if not feed: return {}
+    if feed is None:
+        return None
+    if not feed:
+        return {}
     return feed[0]
