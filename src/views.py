@@ -1,8 +1,16 @@
 import flet as ft
+import threading
 from state import state
-from controls import *
+from controls import GlassContainer, AutoCarousel, TypewriterControl
 import controls as controls_mod  # Alias to avoid conflict if any, but explicit import is needed
-from constants import *
+from constants import (
+    DAILY_APPS,
+    DAILY_QUOTES,
+    DAILY_TIPS,
+    CAROUSEL_DATA,
+    CARD_DEFAULTS,
+    COLOR_NAME_MAP,
+)
 import shlex
 import subprocess
 import datetime
@@ -581,11 +589,11 @@ class SongCard(GlassContainer):
 
 def get_home_view():
     state.update_daily_indices()
+    colors = list(COLOR_NAME_MAP.values())
 
     app_data = DAILY_APPS[state.daily_indices["app"] % len(DAILY_APPS)]
     quote_data = DAILY_QUOTES[state.daily_indices["quote"] % len(DAILY_QUOTES)]
     tip_data = DAILY_TIPS[state.daily_indices["tip"] % len(DAILY_TIPS)]
-    song_data = DAILY_SONGS[state.daily_indices["song"] % len(DAILY_SONGS)]
 
     # --- Daily Digest Cards ---
     cards_row1 = []
@@ -1514,7 +1522,7 @@ def get_settings_view(
             val = int(e.control.value)
             state.carousel_timer = val
             state.save_settings()
-        except:
+        except Exception:
             pass
 
     def update_carousel_glass(e):
@@ -2250,6 +2258,399 @@ def get_settings_view(
 
         return make_settings_tile(label, tile_content, reset_func=reset_card_defaults)
 
+    # Removed Theme Mode Segment per user request (Enforced Dark Mode)
+
+    # Background Image Controls
+    bg_image_input = ft.TextField(
+        value=state.background_image if state.background_image else "",
+        hint_text="URL or Local Path",
+        expand=True,
+        text_size=12,
+        content_padding=10,
+        filled=True,
+        bgcolor=ft.Colors.with_opacity(0.1, "onSurface"),
+    )
+
+    def handle_bg_change_with_revert(new_bg, new_opacity=None, new_blur=None):
+        old_bg = state.background_image
+        old_opacity = state.background_opacity
+        old_blur = state.background_blur
+
+        # Apply new
+        state.background_image = new_bg
+        if new_opacity is not None:
+            state.background_opacity = new_opacity
+        if new_blur is not None:
+            state.background_blur = new_blur
+
+        state.save_settings()
+        if update_bg_callback:
+            update_bg_callback()
+        if navbar_ref[0]:
+            navbar_ref[0]()
+        page.update()
+
+        # Revert Logic
+        def revert_func():
+            state.background_image = old_bg
+            state.background_opacity = old_opacity
+            state.background_blur = old_blur
+            state.save_settings()
+
+            bg_image_input.value = old_bg if old_bg else ""
+            bg_opacity_slider.value = old_opacity * 100
+            txt_bg_opacity.value = f"{int(old_opacity * 100)}%"
+            bg_blur_slider.value = old_blur
+            txt_bg_blur.value = f"{int(old_blur)} px"
+
+            if update_bg_callback:
+                update_bg_callback()
+            if navbar_ref[0]:
+                navbar_ref[0]()
+            page.update()
+            if show_toast:
+                show_toast("Reverted background")
+
+        def keep_func():
+            if show_toast:
+                show_toast("Background kept")
+
+        # Show Revert Toast (15s)
+        if controls_mod.show_delayed_toast_global:
+            controls_mod.show_delayed_toast_global(
+                "Reverting background in 15s...",
+                revert_func,
+                duration=15,
+                cancel_text="KEEP",
+                on_cancel=keep_func,
+                immediate_action_text="REVERT",
+            )
+
+    def update_bg_image(e):
+        val = bg_image_input.value.strip()
+        new_bg = val if val else None
+        if new_bg != state.background_image:
+            handle_bg_change_with_revert(new_bg)
+
+    bg_image_input.on_submit = update_bg_image
+    bg_image_input.on_blur = update_bg_image
+
+    def pick_bg_file(e: ft.FilePickerResultEvent):
+        if e.files:
+            path = e.files[0].path
+            bg_image_input.value = path
+            handle_bg_change_with_revert(path)
+
+    bg_file_picker = ft.FilePicker(on_result=pick_bg_file)
+    if bg_file_picker not in page.overlay:
+        page.overlay.append(bg_file_picker)
+        page.update()
+
+    def clear_bg_image(e):
+        if state.background_image:
+            bg_image_input.value = ""
+            handle_bg_change_with_revert(None)
+
+    bg_image_row = ft.Row(
+        [
+            bg_image_input,
+            ft.IconButton(
+                ft.Icons.IMAGE,
+                tooltip="Select File",
+                on_click=lambda _: bg_file_picker.pick_files(
+                    allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE
+                ),
+            ),
+            ft.IconButton(ft.Icons.CLEAR, tooltip="Clear", on_click=clear_bg_image),
+        ]
+    )
+
+    # Brightness/Opacity Slider
+    txt_bg_opacity = ft.Text(
+        f"{int(state.background_opacity * 100)}%", size=12, width=40
+    )
+
+    def update_bg_opacity(e):
+        val = float(e.control.value)
+        state.background_opacity = val / 100.0
+        txt_bg_opacity.value = f"{int(val)}%"
+        txt_bg_opacity.update()
+        state.save_settings()
+        if update_bg_callback:
+            update_bg_callback()
+
+    bg_opacity_slider = ft.Slider(
+        min=0,
+        max=100,
+        divisions=100,
+        value=state.background_opacity * 100,
+        label="{value}%",
+        on_change=update_bg_opacity,
+        expand=True,
+    )
+
+    # Blur Slider
+    txt_bg_blur = ft.Text(f"{int(state.background_blur)} px", size=12, width=40)
+
+    def update_bg_blur(e):
+        val = float(e.control.value)
+        state.background_blur = val
+        txt_bg_blur.value = f"{int(val)} px"
+        txt_bg_blur.update()
+        state.save_settings()
+        if update_bg_callback:
+            update_bg_callback()
+
+    bg_blur_slider = ft.Slider(
+        min=0,
+        max=50,
+        divisions=50,
+        value=state.background_blur,
+        label="{value}",
+        on_change=update_bg_blur,
+        expand=True,
+    )
+
+    # Rotation
+    txt_bg_rot_speed = ft.Text(f"{state.bg_rotation_speed}x", size=12, width=40)
+
+    def update_bg_rot(e):
+        state.bg_rotation = e.control.value
+        state.save_settings()
+        if update_bg_callback:
+            update_bg_callback()
+
+    def update_bg_rot_speed(e):
+        val = float(e.control.value)
+        state.bg_rotation_speed = val
+        txt_bg_rot_speed.value = f"{val}x"
+        txt_bg_rot_speed.update()
+        state.save_settings()
+        if update_bg_callback:
+            update_bg_callback()
+
+    bg_rot_speed_slider = ft.Slider(
+        min=0.1,
+        max=5.0,
+        divisions=49,
+        value=state.bg_rotation_speed,
+        label="{value}x",
+        on_change=update_bg_rot_speed,
+        expand=True,
+    )
+
+    txt_bg_rot_scale = ft.Text(f"{state.bg_rotation_scale}x", size=12, width=40)
+
+    def update_bg_rot_scale(e):
+        val = float(e.control.value)
+        state.bg_rotation_scale = val
+        txt_bg_rot_scale.value = f"{val}x"
+        txt_bg_rot_scale.update()
+        state.save_settings()
+        if update_bg_callback:
+            update_bg_callback()
+
+    bg_rot_scale_slider = ft.Slider(
+        min=1.0,
+        max=3.0,
+        divisions=20,
+        value=state.bg_rotation_scale,
+        label="{value}x",
+        on_change=update_bg_rot_scale,
+        expand=True,
+    )
+
+    slider_global_radius = ft.Slider(
+        min=0,
+        max=50,
+        value=state.global_radius,
+        label="{value}",
+        on_change=update_global_radius,
+        on_change_end=save_and_refresh_fonts,
+    )
+    slider_nav_radius = ft.Slider(
+        min=0,
+        max=50,
+        value=state.nav_radius,
+        label="{value}",
+        on_change=update_nav_radius,
+        on_change_end=save_and_refresh_fonts,
+        disabled=state.sync_nav_radius,
+    )
+    slider_card_radius = ft.Slider(
+        min=0,
+        max=50,
+        value=state.card_radius,
+        label="{value}",
+        on_change=update_card_radius,
+        on_change_end=save_and_refresh_fonts,
+        disabled=state.sync_card_radius,
+    )
+    slider_button_radius = ft.Slider(
+        min=0,
+        max=50,
+        value=state.button_radius,
+        label="{value}",
+        on_change=update_button_radius,
+        on_change_end=save_and_refresh_fonts,
+        disabled=state.sync_button_radius,
+    )
+    slider_search_radius = ft.Slider(
+        min=0,
+        max=50,
+        value=state.search_radius,
+        label="{value}",
+        on_change=update_search_radius,
+        on_change_end=save_and_refresh_fonts,
+        disabled=state.sync_search_radius,
+    )
+    slider_selector_radius = ft.Slider(
+        min=0,
+        max=50,
+        value=state.selector_radius,
+        label="{value}",
+        on_change=update_selector_radius,
+        on_change_end=save_and_refresh_fonts,
+        disabled=state.sync_selector_radius,
+    )
+    slider_footer_radius = ft.Slider(
+        min=0,
+        max=50,
+        value=state.footer_radius,
+        label="{value}",
+        on_change=update_footer_radius,
+        on_change_end=save_and_refresh_fonts,
+        disabled=state.sync_footer_radius,
+    )
+    slider_chip_radius = ft.Slider(
+        min=0,
+        max=50,
+        value=state.chip_radius,
+        label="{value}",
+        on_change=update_chip_radius,
+        on_change_end=save_and_refresh_fonts,
+        disabled=state.sync_chip_radius,
+    )
+
+    nav_width_slider = ft.Slider(
+        min=300,
+        max=800,
+        value=state.nav_bar_width,
+        label="{value}",
+        on_change=update_nav_width,
+    )
+    nav_height_slider = ft.Slider(
+        min=50,
+        max=120,
+        value=state.nav_bar_height,
+        label="{value}",
+        on_change=update_nav_height,
+    )
+    nav_spacing_slider = ft.Slider(
+        min=0,
+        max=50,
+        value=state.nav_icon_spacing,
+        label="{value}",
+        on_change=update_icon_spacing,
+        disabled=state.sync_nav_spacing,
+    )
+    badge_size_input = ft.TextField(
+        value=str(state.nav_badge_size),
+        width=100,
+        height=40,
+        text_size=12,
+        content_padding=10,
+        filled=True,
+        bgcolor=ft.Colors.with_opacity(0.1, "onSurface"),
+        on_submit=update_badge_size,
+        on_blur=update_badge_size,
+    )
+    confirm_timer_input = ft.TextField(
+        value=str(state.confirm_timer),
+        width=100,
+        height=40,
+        text_size=12,
+        content_padding=10,
+        filled=True,
+        bgcolor=ft.Colors.with_opacity(0.1, "onSurface"),
+        on_submit=update_confirm_timer,
+        on_blur=update_confirm_timer,
+    )
+    undo_timer_input = ft.TextField(
+        value=str(state.undo_timer),
+        width=100,
+        height=40,
+        text_size=12,
+        content_padding=10,
+        filled=True,
+        bgcolor=ft.Colors.with_opacity(0.1, "onSurface"),
+        on_submit=update_undo_timer,
+        on_blur=update_undo_timer,
+    )
+
+    slider_global_font = ft.Slider(
+        min=8,
+        max=24,
+        value=state.global_font_size,
+        label="{value}",
+        on_change=update_global_font_live,
+        on_change_end=save_and_refresh_fonts,
+    )
+    slider_title_font = ft.Slider(
+        min=8,
+        max=32,
+        value=state.title_font_size,
+        label="{value}",
+        on_change=update_title_font_live,
+        on_change_end=save_and_refresh_fonts,
+        disabled=state.sync_title_font,
+    )
+    slider_body_font = ft.Slider(
+        min=8,
+        max=24,
+        value=state.body_font_size,
+        label="{value}",
+        on_change=update_body_font_live,
+        on_change_end=save_and_refresh_fonts,
+        disabled=state.sync_body_font,
+    )
+    slider_small_font = ft.Slider(
+        min=6,
+        max=18,
+        value=state.small_font_size,
+        label="{value}",
+        on_change=update_small_font_live,
+        on_change_end=save_and_refresh_fonts,
+        disabled=state.sync_small_font,
+    )
+    slider_nav_font = ft.Slider(
+        min=6,
+        max=18,
+        value=state.nav_font_size,
+        label="{value}",
+        on_change=update_nav_font_live,
+        on_change_end=save_and_refresh_fonts,
+        disabled=state.sync_nav_font,
+    )
+
+    # --- Moved from Experimental ---
+    def update_fetch_icons(e):
+        state.fetch_icons = e.control.value
+        state.save_settings()
+
+    def update_icon_size(e):
+        state.icon_size = int(e.control.value)
+        state.save_settings()
+        txt_icon_size.value = f"Icon Size (Cur: {int(e.control.value)} | Def: 48)"
+        txt_icon_size.update()
+
+    def update_channel_selector_style(e):
+        state.channel_selector_style = e.control.selected.pop()
+        state.save_settings()
+
+    txt_icon_size = ft.Text(f"Icon Size (Cur: {state.icon_size} | Def: 48)")
+    # -------------------------------
+
     def get_settings_controls(category):
         controls_list = []
         if category == "home_config":
@@ -2328,403 +2729,6 @@ def get_settings_view(
                 ),
             ]
         elif category == "appearance":
-            # Removed Theme Mode Segment per user request (Enforced Dark Mode)
-
-            # Background Image Controls
-            bg_image_input = ft.TextField(
-                value=state.background_image if state.background_image else "",
-                hint_text="URL or Local Path",
-                expand=True,
-                text_size=12,
-                content_padding=10,
-                filled=True,
-                bgcolor=ft.Colors.with_opacity(0.1, "onSurface"),
-            )
-
-            def handle_bg_change_with_revert(new_bg, new_opacity=None, new_blur=None):
-                old_bg = state.background_image
-                old_opacity = state.background_opacity
-                old_blur = state.background_blur
-
-                # Apply new
-                state.background_image = new_bg
-                if new_opacity is not None:
-                    state.background_opacity = new_opacity
-                if new_blur is not None:
-                    state.background_blur = new_blur
-
-                state.save_settings()
-                if update_bg_callback:
-                    update_bg_callback()
-                if navbar_ref[0]:
-                    navbar_ref[0]()
-                page.update()
-
-                # Revert Logic
-                def revert_func():
-                    state.background_image = old_bg
-                    state.background_opacity = old_opacity
-                    state.background_blur = old_blur
-                    state.save_settings()
-
-                    bg_image_input.value = old_bg if old_bg else ""
-                    bg_opacity_slider.value = old_opacity * 100
-                    txt_bg_opacity.value = f"{int(old_opacity * 100)}%"
-                    bg_blur_slider.value = old_blur
-                    txt_bg_blur.value = f"{int(old_blur)} px"
-
-                    if update_bg_callback:
-                        update_bg_callback()
-                    if navbar_ref[0]:
-                        navbar_ref[0]()
-                    page.update()
-                    if show_toast:
-                        show_toast("Reverted background")
-
-                def keep_func():
-                    if show_toast:
-                        show_toast("Background kept")
-
-                # Show Revert Toast (15s)
-                if controls_mod.show_delayed_toast_global:
-                    controls_mod.show_delayed_toast_global(
-                        "Reverting background in 15s...",
-                        revert_func,
-                        duration=15,
-                        cancel_text="KEEP",
-                        on_cancel=keep_func,
-                        immediate_action_text="REVERT",
-                    )
-
-            def update_bg_image(e):
-                val = bg_image_input.value.strip()
-                new_bg = val if val else None
-                if new_bg != state.background_image:
-                    handle_bg_change_with_revert(new_bg)
-
-            bg_image_input.on_submit = update_bg_image
-            bg_image_input.on_blur = update_bg_image
-
-            def pick_bg_file(e: ft.FilePickerResultEvent):
-                if e.files:
-                    path = e.files[0].path
-                    bg_image_input.value = path
-                    handle_bg_change_with_revert(path)
-
-            bg_file_picker = ft.FilePicker(on_result=pick_bg_file)
-            if bg_file_picker not in page.overlay:
-                page.overlay.append(bg_file_picker)
-                page.update()
-
-            def clear_bg_image(e):
-                if state.background_image:
-                    bg_image_input.value = ""
-                    handle_bg_change_with_revert(None)
-
-            bg_image_row = ft.Row(
-                [
-                    bg_image_input,
-                    ft.IconButton(
-                        ft.Icons.IMAGE,
-                        tooltip="Select File",
-                        on_click=lambda _: bg_file_picker.pick_files(
-                            allow_multiple=False, file_type=ft.FilePickerFileType.IMAGE
-                        ),
-                    ),
-                    ft.IconButton(
-                        ft.Icons.CLEAR, tooltip="Clear", on_click=clear_bg_image
-                    ),
-                ]
-            )
-
-            # Brightness/Opacity Slider
-            txt_bg_opacity = ft.Text(
-                f"{int(state.background_opacity * 100)}%", size=12, width=40
-            )
-
-            def update_bg_opacity(e):
-                val = float(e.control.value)
-                state.background_opacity = val / 100.0
-                txt_bg_opacity.value = f"{int(val)}%"
-                txt_bg_opacity.update()
-                state.save_settings()
-                if update_bg_callback:
-                    update_bg_callback()
-
-            bg_opacity_slider = ft.Slider(
-                min=0,
-                max=100,
-                divisions=100,
-                value=state.background_opacity * 100,
-                label="{value}%",
-                on_change=update_bg_opacity,
-                expand=True,
-            )
-
-            # Blur Slider
-            txt_bg_blur = ft.Text(f"{int(state.background_blur)} px", size=12, width=40)
-
-            def update_bg_blur(e):
-                val = float(e.control.value)
-                state.background_blur = val
-                txt_bg_blur.value = f"{int(val)} px"
-                txt_bg_blur.update()
-                state.save_settings()
-                if update_bg_callback:
-                    update_bg_callback()
-
-            bg_blur_slider = ft.Slider(
-                min=0,
-                max=50,
-                divisions=50,
-                value=state.background_blur,
-                label="{value}",
-                on_change=update_bg_blur,
-                expand=True,
-            )
-
-            # Rotation
-            txt_bg_rot_speed = ft.Text(f"{state.bg_rotation_speed}x", size=12, width=40)
-
-            def update_bg_rot(e):
-                state.bg_rotation = e.control.value
-                state.save_settings()
-                if update_bg_callback:
-                    update_bg_callback()
-
-            def update_bg_rot_speed(e):
-                val = float(e.control.value)
-                state.bg_rotation_speed = val
-                txt_bg_rot_speed.value = f"{val}x"
-                txt_bg_rot_speed.update()
-                state.save_settings()
-                if update_bg_callback:
-                    update_bg_callback()
-
-            bg_rot_speed_slider = ft.Slider(
-                min=0.1,
-                max=5.0,
-                divisions=49,
-                value=state.bg_rotation_speed,
-                label="{value}x",
-                on_change=update_bg_rot_speed,
-                expand=True,
-            )
-
-            txt_bg_rot_scale = ft.Text(f"{state.bg_rotation_scale}x", size=12, width=40)
-
-            def update_bg_rot_scale(e):
-                val = float(e.control.value)
-                state.bg_rotation_scale = val
-                txt_bg_rot_scale.value = f"{val}x"
-                txt_bg_rot_scale.update()
-                state.save_settings()
-                if update_bg_callback:
-                    update_bg_callback()
-
-            bg_rot_scale_slider = ft.Slider(
-                min=1.0,
-                max=3.0,
-                divisions=20,
-                value=state.bg_rotation_scale,
-                label="{value}x",
-                on_change=update_bg_rot_scale,
-                expand=True,
-            )
-
-            slider_global_radius = ft.Slider(
-                min=0,
-                max=50,
-                value=state.global_radius,
-                label="{value}",
-                on_change=update_global_radius,
-                on_change_end=save_and_refresh_fonts,
-            )
-            slider_nav_radius = ft.Slider(
-                min=0,
-                max=50,
-                value=state.nav_radius,
-                label="{value}",
-                on_change=update_nav_radius,
-                on_change_end=save_and_refresh_fonts,
-                disabled=state.sync_nav_radius,
-            )
-            slider_card_radius = ft.Slider(
-                min=0,
-                max=50,
-                value=state.card_radius,
-                label="{value}",
-                on_change=update_card_radius,
-                on_change_end=save_and_refresh_fonts,
-                disabled=state.sync_card_radius,
-            )
-            slider_button_radius = ft.Slider(
-                min=0,
-                max=50,
-                value=state.button_radius,
-                label="{value}",
-                on_change=update_button_radius,
-                on_change_end=save_and_refresh_fonts,
-                disabled=state.sync_button_radius,
-            )
-            slider_search_radius = ft.Slider(
-                min=0,
-                max=50,
-                value=state.search_radius,
-                label="{value}",
-                on_change=update_search_radius,
-                on_change_end=save_and_refresh_fonts,
-                disabled=state.sync_search_radius,
-            )
-            slider_selector_radius = ft.Slider(
-                min=0,
-                max=50,
-                value=state.selector_radius,
-                label="{value}",
-                on_change=update_selector_radius,
-                on_change_end=save_and_refresh_fonts,
-                disabled=state.sync_selector_radius,
-            )
-            slider_footer_radius = ft.Slider(
-                min=0,
-                max=50,
-                value=state.footer_radius,
-                label="{value}",
-                on_change=update_footer_radius,
-                on_change_end=save_and_refresh_fonts,
-                disabled=state.sync_footer_radius,
-            )
-            slider_chip_radius = ft.Slider(
-                min=0,
-                max=50,
-                value=state.chip_radius,
-                label="{value}",
-                on_change=update_chip_radius,
-                on_change_end=save_and_refresh_fonts,
-                disabled=state.sync_chip_radius,
-            )
-
-            nav_width_slider = ft.Slider(
-                min=300,
-                max=800,
-                value=state.nav_bar_width,
-                label="{value}",
-                on_change=update_nav_width,
-            )
-            nav_height_slider = ft.Slider(
-                min=50,
-                max=120,
-                value=state.nav_bar_height,
-                label="{value}",
-                on_change=update_nav_height,
-            )
-            nav_spacing_slider = ft.Slider(
-                min=0,
-                max=50,
-                value=state.nav_icon_spacing,
-                label="{value}",
-                on_change=update_icon_spacing,
-                disabled=state.sync_nav_spacing,
-            )
-            badge_size_input = ft.TextField(
-                value=str(state.nav_badge_size),
-                width=100,
-                height=40,
-                text_size=12,
-                content_padding=10,
-                filled=True,
-                bgcolor=ft.Colors.with_opacity(0.1, "onSurface"),
-                on_submit=update_badge_size,
-                on_blur=update_badge_size,
-            )
-            confirm_timer_input = ft.TextField(
-                value=str(state.confirm_timer),
-                width=100,
-                height=40,
-                text_size=12,
-                content_padding=10,
-                filled=True,
-                bgcolor=ft.Colors.with_opacity(0.1, "onSurface"),
-                on_submit=update_confirm_timer,
-                on_blur=update_confirm_timer,
-            )
-            undo_timer_input = ft.TextField(
-                value=str(state.undo_timer),
-                width=100,
-                height=40,
-                text_size=12,
-                content_padding=10,
-                filled=True,
-                bgcolor=ft.Colors.with_opacity(0.1, "onSurface"),
-                on_submit=update_undo_timer,
-                on_blur=update_undo_timer,
-            )
-
-            slider_global_font = ft.Slider(
-                min=8,
-                max=24,
-                value=state.global_font_size,
-                label="{value}",
-                on_change=update_global_font_live,
-                on_change_end=save_and_refresh_fonts,
-            )
-            slider_title_font = ft.Slider(
-                min=8,
-                max=32,
-                value=state.title_font_size,
-                label="{value}",
-                on_change=update_title_font_live,
-                on_change_end=save_and_refresh_fonts,
-                disabled=state.sync_title_font,
-            )
-            slider_body_font = ft.Slider(
-                min=8,
-                max=24,
-                value=state.body_font_size,
-                label="{value}",
-                on_change=update_body_font_live,
-                on_change_end=save_and_refresh_fonts,
-                disabled=state.sync_body_font,
-            )
-            slider_small_font = ft.Slider(
-                min=6,
-                max=18,
-                value=state.small_font_size,
-                label="{value}",
-                on_change=update_small_font_live,
-                on_change_end=save_and_refresh_fonts,
-                disabled=state.sync_small_font,
-            )
-            slider_nav_font = ft.Slider(
-                min=6,
-                max=18,
-                value=state.nav_font_size,
-                label="{value}",
-                on_change=update_nav_font_live,
-                on_change_end=save_and_refresh_fonts,
-                disabled=state.sync_nav_font,
-            )
-
-            # --- Moved from Experimental ---
-            def update_fetch_icons(e):
-                state.fetch_icons = e.control.value
-                state.save_settings()
-
-            def update_icon_size(e):
-                state.icon_size = int(e.control.value)
-                state.save_settings()
-                txt_icon_size.value = (
-                    f"Icon Size (Cur: {int(e.control.value)} | Def: 48)"
-                )
-                txt_icon_size.update()
-
-            def update_channel_selector_style(e):
-                state.channel_selector_style = e.control.selected.pop()
-                state.save_settings()
-
-            txt_icon_size = ft.Text(f"Icon Size (Cur: {state.icon_size} | Def: 48)")
-            # -------------------------------
-
             controls_list = [
                 ft.Text("Appearance", size=24, weight=ft.FontWeight.BOLD),
                 ft.Divider(),
@@ -3309,7 +3313,7 @@ def get_settings_view(
                         val = 1
                     state.auto_refresh_interval = val
                     state.save_settings()
-                except:
+                except Exception:
                     pass
 
             interval_input = ft.TextField(
@@ -3403,7 +3407,7 @@ def get_settings_view(
                     settings_scroll_ref.current.scroll_to(
                         offset=state.last_settings_scroll, duration=0
                     )
-                except:
+                except Exception:
                     pass
 
             settings_main_column.update()

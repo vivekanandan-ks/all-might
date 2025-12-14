@@ -1,13 +1,28 @@
 import flet as ft
+import time
+import threading
+import shlex
+import subprocess
 from collections import Counter
 from state import state
-from constants import *
+from constants import APP_NAME
 import controls
-from controls import *
-from views import *
+from controls import (
+    GlassContainer,
+    GlassButton,
+    NixPackageCard,
+    UndoToast,
+    DelayedActionToast,
+)
+from views import (
+    get_home_view,
+    get_search_view,
+    get_cart_view,
+    get_lists_view,
+    get_settings_view,
+)
 from updates import get_installed_view
-from utils import *
-import subprocess
+from utils import execute_nix_search
 
 # --- Main Application ---
 
@@ -380,7 +395,7 @@ def main(page: ft.Page):
             try:
                 t_container.opacity = 0
                 page.update()
-            except:
+            except Exception:
                 pass
             time.sleep(0.3)
             if current_toast_token[0] != my_token:
@@ -388,7 +403,7 @@ def main(page: ft.Page):
             try:
                 toast_overlay_container.visible = False
                 page.update()
-            except:
+            except Exception:
                 pass
 
         threading.Thread(target=hide, daemon=True).start()
@@ -505,7 +520,7 @@ def main(page: ft.Page):
                 confirm_btn.text = f"Yes ({i}s)"
                 try:
                     confirm_btn.update()
-                except:
+                except Exception:
                     pass
                 time.sleep(1)
 
@@ -516,7 +531,7 @@ def main(page: ft.Page):
                 confirm_btn.color = ft.Colors.WHITE
                 try:
                     confirm_btn.update()
-                except:
+                except Exception:
                     pass
 
         threading.Thread(target=timer_logic, daemon=True).start()
@@ -1875,7 +1890,7 @@ def main(page: ft.Page):
             if state.auto_refresh_ui:
                 try:
                     state.refresh_installed_cache()
-                except:
+                except Exception:
                     pass
             time.sleep(max(1, state.auto_refresh_interval))
 
@@ -1919,7 +1934,7 @@ def main(page: ft.Page):
                         bg_image_control.update()
                     if default_bg_container.page and default_bg_container.visible:
                         default_bg_container.update()
-                except:
+                except Exception:
                     pass
                 time.sleep(0.05)
             else:
@@ -1934,7 +1949,7 @@ def main(page: ft.Page):
                             bg_image_control.update()
                         if default_bg_container.page:
                             default_bg_container.update()
-                    except:
+                    except Exception:
                         pass
                 time.sleep(1.0)
 

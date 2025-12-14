@@ -226,7 +226,7 @@ class UndoToast(ft.Container):
                 self.progress_ring.value = remaining / self.duration_seconds
                 self.counter_text.value = str(int(remaining) + 1)
                 self.update()
-            except:
+            except Exception:
                 return
 
         if not self.cancelled:
@@ -236,7 +236,7 @@ class UndoToast(ft.Container):
                 self.progress_ring.value = 0
                 self.counter_text.value = "0"
                 self.update()
-            except:
+            except Exception:
                 pass
 
             time.sleep(0.5)
@@ -403,7 +403,7 @@ class DelayedActionToast(ft.Container):
                 self.progress_ring.value = remaining / self.duration_seconds
                 self.counter_text.value = str(int(remaining) + 1)
                 self.update()
-            except:
+            except Exception:
                 return
 
         if not self.cancelled:
@@ -413,7 +413,7 @@ class DelayedActionToast(ft.Container):
                 self.progress_ring.value = 0
                 self.counter_text.value = "0"
                 self.update()
-            except:
+            except Exception:
                 pass
 
             time.sleep(0.5)
@@ -424,7 +424,7 @@ class DelayedActionToast(ft.Container):
             try:
                 self.visible = False
                 self.update()
-            except:
+            except Exception:
                 pass
 
     def handle_cancel(self, e):
@@ -434,7 +434,7 @@ class DelayedActionToast(ft.Container):
         try:
             self.visible = False
             self.update()
-        except:
+        except Exception:
             pass
 
     def handle_immediate(self, e):
@@ -444,7 +444,7 @@ class DelayedActionToast(ft.Container):
         try:
             self.visible = False
             self.update()
-        except:
+        except Exception:
             pass
 
 
@@ -691,7 +691,6 @@ class NixPackageCard(GlassContainer):
         )
 
         self.programs_list = self.pkg.get("package_programs", [])
-        programs_str = ", ".join(self.programs_list) if self.programs_list else None
 
         # New: Tracking & Installed Status
         self.is_installed = state.is_package_installed(self.pname)
@@ -1339,7 +1338,6 @@ class NixPackageCard(GlassContainer):
         e.control.update()
 
     def build_channel_menu_items(self):
-        tracked_channel = state.get_tracked_channel(self.pname)
         items = []
         for ch in state.active_channels:
             content_row = ft.Row(
@@ -1574,7 +1572,7 @@ class NixPackageCard(GlassContainer):
                 confirm_btn.text = f"Yes ({i}s)"
                 try:
                     confirm_btn.update()
-                except:
+                except Exception:
                     pass
                 time.sleep(1)
 
@@ -1586,7 +1584,7 @@ class NixPackageCard(GlassContainer):
                 confirm_btn.on_click = handle_confirm
                 try:
                     confirm_btn.update()
-                except:
+                except Exception:
                     pass
 
         threading.Thread(target=timer_logic, daemon=True).start()

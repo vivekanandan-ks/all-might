@@ -6,7 +6,16 @@ import datetime
 import subprocess
 import re
 from pathlib import Path
-from constants import *
+from constants import (
+    CARD_DEFAULTS,
+    DAILY_APPS,
+    DAILY_QUOTES,
+    DAILY_TIPS,
+    DAILY_SONGS,
+    CONFIG_FILE,
+    CONFIG_DIR,
+    TRACKING_FILE,
+)
 
 
 # --- State Management ---

@@ -38,7 +38,7 @@ def get_binaries(store_path):
     if os.path.isdir(bin_path):
         try:
             return os.listdir(bin_path)
-        except:
+        except Exception:
             return []
     return []
 
