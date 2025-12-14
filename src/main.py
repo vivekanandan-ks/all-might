@@ -334,12 +334,17 @@ def main(page: ft.Page):
     )
 
     def show_custom_dialog(title, content, actions, dismissible=True):
+        if isinstance(title, str):
+            title_control = ft.Text(
+                title, size=20, weight=ft.FontWeight.BOLD, color="onSurface"
+            )
+        else:
+            title_control = title
+
         dialog_content = GlassContainer(
             content=ft.Column(
                 [
-                    ft.Text(
-                        title, size=20, weight=ft.FontWeight.BOLD, color="onSurface"
-                    ),
+                    title_control,
                     ft.Divider(height=10),
                     content,
                     ft.Divider(height=10),
@@ -841,9 +846,43 @@ def main(page: ft.Page):
         visible=len(state.active_processes) > 0,
         top=2,
         right=2,
+        animate_scale=ft.Animation(300, ft.AnimationCurve.EASE_OUT),
+        scale=1.0,
     )
 
     process_view_refresh_ref = [None]
+
+    # Pulse animation state
+
+    def badge_pulse_loop():
+        while True:
+            has_running = any(
+                p.get("status") == "Running" for p in state.active_processes
+            )
+            if has_running:
+                try:
+                    processes_badge_container.scale = 1.3
+                    if processes_badge_container.page:
+                        processes_badge_container.update()
+                    time.sleep(0.4)
+                    processes_badge_container.scale = 1.0
+                    if processes_badge_container.page:
+                        processes_badge_container.update()
+                    time.sleep(0.4)
+                except Exception:
+                    break
+            else:
+                # Reset if needed
+                if processes_badge_container.scale != 1.0:
+                    processes_badge_container.scale = 1.0
+                    try:
+                        if processes_badge_container.page:
+                            processes_badge_container.update()
+                    except Exception:
+                        pass
+                time.sleep(1.0)
+
+    threading.Thread(target=badge_pulse_loop, daemon=True).start()
 
     def update_processes_badge():
         count = len(state.active_processes)

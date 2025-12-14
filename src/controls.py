@@ -1430,8 +1430,24 @@ class NixPackageCard(GlassContainer):
         cancel_btn = ft.TextButton(
             "Cancel Process", on_click=cancel_process, visible=True
         )
-        minimize_btn = ft.TextButton(
-            "Minimize", on_click=minimize_process, visible=True
+
+        # Header with Minimize Icon
+        title_row = ft.Row(
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            controls=[
+                ft.Text(
+                    f"Installing {self.pname}...",
+                    size=20,
+                    weight=ft.FontWeight.BOLD,
+                    color="onSurface",
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.REMOVE,  # Hyphen-like icon for minimize
+                    tooltip="Minimize to background",
+                    on_click=minimize_process,
+                    icon_color="white",
+                ),
+            ],
         )
 
         # Register Process
@@ -1452,9 +1468,9 @@ class NixPackageCard(GlassContainer):
 
         if self.show_dialog:
             close_func[0] = self.show_dialog(
-                f"Installing {self.pname}...",
+                title_row,
                 content_container,
-                [minimize_btn, cancel_btn, close_btn],
+                [cancel_btn, close_btn],
                 dismissible=False,
             )
 
@@ -1566,13 +1582,10 @@ class NixPackageCard(GlassContainer):
             # Show close button, hide cancel/minimize
             close_btn.visible = True
             cancel_btn.visible = False
-            minimize_btn.visible = False
             if close_btn.page:
                 close_btn.update()
             if cancel_btn.page:
                 cancel_btn.update()
-            if minimize_btn.page:
-                minimize_btn.update()
             if output_column.page:
                 output_column.update()
 

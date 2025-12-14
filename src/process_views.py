@@ -8,12 +8,37 @@ from controls import GlassContainer
 def get_processes_view(show_dialog_callback, refresh_callback_ref=None):
     process_list = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO)
 
+    current_filter = ["All"]  # Mutable for closure
+
     def refresh_list():
         process_list.controls.clear()
-        if not state.active_processes:
+
+        filtered_procs = []
+        for p in state.active_processes:
+            status = p.get("status", "Unknown")
+            cat = current_filter[0]
+
+            if cat == "All":
+                filtered_procs.append(p)
+            elif cat == "Ongoing":
+                if status == "Running":
+                    filtered_procs.append(p)
+            elif cat == "Failed":
+                if status in ["Failed", "Error"]:
+                    filtered_procs.append(p)
+            elif cat == "History":
+                if status in ["Completed", "Cancelled"]:
+                    filtered_procs.append(p)
+
+        if not filtered_procs:
+            msg = (
+                "No active processes."
+                if current_filter[0] == "All"
+                else f"No {current_filter[0].lower()} processes."
+            )
             process_list.controls.append(
                 ft.Container(
-                    content=ft.Text("No active processes.", color="onSurfaceVariant"),
+                    content=ft.Text(msg, color="onSurfaceVariant"),
                     alignment=ft.alignment.center,
                     padding=20,
                 )
@@ -21,7 +46,7 @@ def get_processes_view(show_dialog_callback, refresh_callback_ref=None):
         else:
             # Sort by timestamp desc
             sorted_procs = sorted(
-                state.active_processes,
+                filtered_procs,
                 key=lambda x: x.get("timestamp", 0),
                 reverse=True,
             )
@@ -32,6 +57,8 @@ def get_processes_view(show_dialog_callback, refresh_callback_ref=None):
                     status_color = ft.Colors.GREEN
                 elif status == "Failed" or status == "Cancelled" or status == "Error":
                     status_color = ft.Colors.RED
+                elif status == "Running":
+                    status_color = ft.Colors.ORANGE_400
 
                 def open_details(e, p=proc):
                     _show_process_details(p, show_dialog_callback, refresh_list)
@@ -86,6 +113,21 @@ def get_processes_view(show_dialog_callback, refresh_callback_ref=None):
         if process_list.page:
             process_list.update()
 
+    def on_filter_change(e):
+        current_filter[0] = list(e.control.selected)[0]
+        refresh_list()
+
+    filter_segment = ft.SegmentedButton(
+        selected={"All"},
+        on_change=on_filter_change,
+        segments=[
+            ft.Segment(value="All", label=ft.Text("All")),
+            ft.Segment(value="Ongoing", label=ft.Text("Ongoing")),
+            ft.Segment(value="Failed", label=ft.Text("Failed")),
+            ft.Segment(value="History", label=ft.Text("History")),
+        ],
+    )
+
     refresh_list()
 
     if refresh_callback_ref is not None and isinstance(refresh_callback_ref, list):
@@ -103,6 +145,8 @@ def get_processes_view(show_dialog_callback, refresh_callback_ref=None):
         content=ft.Column(
             controls=[
                 ft.Text("Background Processes", size=24, weight=ft.FontWeight.BOLD),
+                ft.Container(height=10),
+                filter_segment,
                 ft.Divider(),
                 ft.Container(expand=True, content=process_list),
             ]
