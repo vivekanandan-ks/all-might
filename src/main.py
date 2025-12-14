@@ -1869,7 +1869,11 @@ def main(page: ft.Page):
             )
         elif idx == 4:
             content_area.content = get_installed_view(
-                page, on_global_cart_change, show_toast, global_refresh_action
+                page,
+                on_global_cart_change,
+                show_toast,
+                show_dialog_callback=show_custom_dialog,
+                refresh_callback=global_refresh_action,
             )
         elif idx == 5:
             content_area.content = get_settings_view(

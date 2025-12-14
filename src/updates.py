@@ -209,7 +209,11 @@ def get_installed_packages():
 
 
 def get_installed_view(
-    page, on_cart_change_callback, show_toast_callback, refresh_callback=None
+    page,
+    on_cart_change_callback,
+    show_toast_callback,
+    show_dialog_callback=None,
+    refresh_callback=None,
 ):
     # Filter State
     filter_state = {"selected": "all-might"}  # default to all-might
@@ -264,6 +268,7 @@ def get_installed_view(
                     show_toast_callback=show_toast_callback,
                     on_menu_open=None,
                     on_install_change=lambda: update_view(),
+                    show_dialog_callback=show_dialog_callback,
                 )
                 update_list.controls.append(card)
 
