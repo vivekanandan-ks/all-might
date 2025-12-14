@@ -5,6 +5,7 @@ import threading
 import time
 import subprocess
 import re
+import uuid
 import urllib.request
 from urllib.parse import urljoin, urlparse
 from state import state
@@ -1395,8 +1396,9 @@ class NixPackageCard(GlassContainer):
 
         close_func = [None]
         proc_ref = [None]  # Reference to hold process object for cancellation
+        process_id = str(uuid.uuid4())
 
-        def close_dialog(e):
+        def close_dialog(e=None):
             if close_func[0]:
                 close_func[0]()
 
@@ -1404,25 +1406,55 @@ class NixPackageCard(GlassContainer):
             if proc_ref[0]:
                 try:
                     proc_ref[0].terminate()
-                    output_column.controls.append(
-                        ft.Text("Process cancelled by user.", color="red")
-                    )
+                    msg = "Process cancelled by user."
+                    output_column.controls.append(ft.Text(msg, color="red"))
+                    # Update State
+                    for p in state.active_processes:
+                        if p["id"] == process_id:
+                            p["logs"].append(msg)
+                            break
+                    state.update_process_status(process_id, "Cancelled")
+
                     if output_column.page:
                         output_column.update()
                 except Exception as ex:
                     print(f"Error cancelling process: {ex}")
             close_dialog(e)
 
+        def minimize_process(e):
+            if self.show_toast:
+                self.show_toast(f"Minimized {self.pname} installation")
+            close_dialog(e)
+
         close_btn = ft.TextButton("Close", on_click=close_dialog, visible=False)
         cancel_btn = ft.TextButton(
             "Cancel Process", on_click=cancel_process, visible=True
+        )
+        minimize_btn = ft.TextButton(
+            "Minimize", on_click=minimize_process, visible=True
+        )
+
+        # Register Process
+        state.add_active_process(
+            {
+                "id": process_id,
+                "name": f"Installing {self.pname}",
+                "type": "install",
+                "pname": self.pname,
+                "channel": self.selected_channel,
+                "status": "Running",
+                "logs": [],
+                "timestamp": time.time(),
+                "proc_ref": proc_ref,  # Store ref to allow cancellation from Processes view if needed
+                "card_ref": self,  # Store ref to allow UI updates on completion even if minimized
+            }
         )
 
         if self.show_dialog:
             close_func[0] = self.show_dialog(
                 f"Installing {self.pname}...",
                 content_container,
-                [cancel_btn, close_btn],
+                [minimize_btn, cancel_btn, close_btn],
                 dismissible=False,
             )
 
@@ -1440,20 +1472,32 @@ class NixPackageCard(GlassContainer):
                 proc_ref[0] = process
 
                 for line in process.stdout:
+                    clean_line = line.strip()
+                    # UI Update
                     output_column.controls.append(
-                        ft.Text(line.strip(), font_family="monospace", size=12)
+                        ft.Text(clean_line, font_family="monospace", size=12)
                     )
                     if output_column.page:
                         output_column.update()
 
+                    # State Update
+                    for p in state.active_processes:
+                        if p["id"] == process_id:
+                            p["logs"].append(clean_line)
+                            break
+
                 process.wait()
 
                 if process.returncode == 0:
+                    success_msg = "Installation Successful!"
                     output_column.controls.append(
-                        ft.Text(
-                            "Installation Successful!", color="green", weight="bold"
-                        )
+                        ft.Text(success_msg, color="green", weight="bold")
                     )
+                    state.update_process_status(process_id, "Completed")
+                    for p in state.active_processes:
+                        if p["id"] == process_id:
+                            p["logs"].append(success_msg)
+                            break
 
                     file_path = self.pkg.get("package_position", "").split(":")[0]
                     source_url = (
@@ -1480,40 +1524,66 @@ class NixPackageCard(GlassContainer):
 
                     self.installed_version = state.get_installed_version(self.pname)
 
-                    self.channel_dropdown.items = self.build_channel_menu_items()
-                    if self.channel_dropdown.page:
-                        self.channel_dropdown.update()
+                    # Safe UI updates (check page)
+                    # Note: We use self.channel_dropdown etc which might be on page even if dialog is closed
+                    # But if the user navigated away, they might not be.
+                    try:
+                        self.channel_dropdown.items = self.build_channel_menu_items()
+                        if self.channel_dropdown.page:
+                            self.channel_dropdown.update()
 
-                    self.install_btn.visible = False
-                    self.uninstall_btn.visible = True
-                    if self.page_ref:
-                        self.update()
+                        self.install_btn.visible = False
+                        self.uninstall_btn.visible = True
+                        if self.page_ref:
+                            self.update()
+                    except Exception:
+                        pass  # UI might be gone
+
                     if self.on_cart_change:
                         self.on_cart_change()
                     if self.on_install_change:
                         self.on_install_change()
                 else:
+                    state.update_process_status(process_id, "Failed")
                     # If cancelled (negative return code usually), don't show error if we know it was cancelled
                     if process.returncode != -15:  # SIGTERM
-                        output_column.controls.append(
-                            ft.Text(
-                                f"Process exited with code {process.returncode}",
-                                color="red",
-                            )
-                        )
+                        err_msg = f"Process exited with code {process.returncode}"
+                        output_column.controls.append(ft.Text(err_msg, color="red"))
+                        for p in state.active_processes:
+                            if p["id"] == process_id:
+                                p["logs"].append(err_msg)
+                                break
 
             except Exception as ex:
-                output_column.controls.append(ft.Text(f"Error: {ex}", color="red"))
+                err_msg = f"Error: {ex}"
+                output_column.controls.append(ft.Text(err_msg, color="red"))
+                state.update_process_status(process_id, "Error")
+                for p in state.active_processes:
+                    if p["id"] == process_id:
+                        p["logs"].append(err_msg)
+                        break
 
-            # Show close button, hide cancel
+            # Show close button, hide cancel/minimize
             close_btn.visible = True
             cancel_btn.visible = False
+            minimize_btn.visible = False
             if close_btn.page:
                 close_btn.update()
             if cancel_btn.page:
                 cancel_btn.update()
+            if minimize_btn.page:
+                minimize_btn.update()
             if output_column.page:
                 output_column.update()
+
+            # Remove from active processes list after a short delay or keep it as history?
+            # User wants to "reopen" popup. So we should keep it until closed from "Processes" tab or dismissed.
+            # But the user said "minimize".
+            # Usually completed processes stay in list until dismissed.
+
+            # Notify state listener to update badge
+            if state.on_process_update:
+                state.on_process_update()
 
         threading.Thread(target=run, daemon=True).start()
 

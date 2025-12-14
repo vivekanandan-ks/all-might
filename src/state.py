@@ -167,6 +167,11 @@ class AppState:
         self.favourites = []
         self.saved_lists = {}
         self.tracked_installs = {}
+
+        # Active Processes
+        self.active_processes = []
+        self.on_process_update = None
+
         self.load_settings()
         self.load_tracking()
         self.update_daily_indices()
@@ -920,6 +925,26 @@ class AppState:
         if pname in self.installed_items and self.installed_items[pname]:
             return self.installed_items[pname][0]["key"]
         return None
+
+    def add_active_process(self, process_data):
+        self.active_processes.append(process_data)
+        if self.on_process_update:
+            self.on_process_update()
+
+    def remove_active_process(self, process_id):
+        self.active_processes = [
+            p for p in self.active_processes if p["id"] != process_id
+        ]
+        if self.on_process_update:
+            self.on_process_update()
+
+    def update_process_status(self, process_id, status):
+        for p in self.active_processes:
+            if p["id"] == process_id:
+                p["status"] = status
+                break
+        if self.on_process_update:
+            self.on_process_update()
 
 
 state = AppState()

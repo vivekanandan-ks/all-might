@@ -21,6 +21,7 @@ from views import (
     get_lists_view,
     get_settings_view,
 )
+from process_views import get_processes_view
 from updates import get_installed_view
 from utils import execute_nix_search
 
@@ -823,6 +824,44 @@ def main(page: ft.Page):
         right=2,
     )
 
+    processes_badge_count = ft.Text(
+        str(len(state.active_processes)),
+        size=max(8, badge_size_val / 2),
+        color=ft.Colors.WHITE,
+        weight=ft.FontWeight.BOLD,
+        text_align=ft.TextAlign.CENTER,
+    )
+    processes_badge_container = ft.Container(
+        content=processes_badge_count,
+        bgcolor=ft.Colors.RED_500,
+        width=badge_size_val,
+        height=badge_size_val,
+        border_radius=badge_size_val / 2,
+        alignment=ft.alignment.center,
+        visible=len(state.active_processes) > 0,
+        top=2,
+        right=2,
+    )
+
+    process_view_refresh_ref = [None]
+
+    def update_processes_badge():
+        count = len(state.active_processes)
+        processes_badge_count.value = str(count)
+        if processes_badge_container.page:
+            processes_badge_container.visible = count > 0
+            processes_badge_container.update()
+
+    def on_global_process_update():
+        update_processes_badge()
+        if process_view_refresh_ref[0]:
+            try:
+                process_view_refresh_ref[0]()
+            except Exception:
+                pass
+
+    state.on_process_update = on_global_process_update
+
     def update_lists_badge():
         count = len(state.saved_lists)
         lists_badge_count.value = str(count)
@@ -845,10 +884,17 @@ def main(page: ft.Page):
         lists_badge_container.border_radius = radius
         lists_badge_count.size = font_sz
 
+        processes_badge_container.width = sz
+        processes_badge_container.height = sz
+        processes_badge_container.border_radius = radius
+        processes_badge_count.size = font_sz
+
         if cart_badge_container.page:
             cart_badge_container.update()
         if lists_badge_container.page:
             lists_badge_container.update()
+        if processes_badge_container.page:
+            processes_badge_container.update()
 
     def _build_shell_command_for_items(items, with_wrapper=True):
         prefix = state.shell_cart_prefix.strip()
@@ -1676,6 +1722,7 @@ def main(page: ft.Page):
             (ft.Icons.SHOPPING_CART_OUTLINED, ft.Icons.SHOPPING_CART, "Cart"),
             (ft.Icons.LIST_ALT_OUTLINED, ft.Icons.LIST_ALT, "Lists"),
             (ft.Icons.APPS_OUTLINED, ft.Icons.APPS, "Installed"),
+            (ft.Icons.RUN_CIRCLE_OUTLINED, ft.Icons.RUN_CIRCLE, "Processes"),
             (ft.Icons.SETTINGS_OUTLINED, ft.Icons.SETTINGS, "Settings"),
         ]
 
@@ -1805,6 +1852,10 @@ def main(page: ft.Page):
                 wrapper = ft.Stack([btn, lists_badge_container])
                 final_controls.append(wrapper)
                 nav_button_controls.append(wrapper)
+            elif i == 5:
+                wrapper = ft.Stack([btn, processes_badge_container])
+                final_controls.append(wrapper)
+                nav_button_controls.append(wrapper)
             else:
                 final_controls.append(btn)
                 nav_button_controls.append(btn)
@@ -1828,7 +1879,7 @@ def main(page: ft.Page):
         return container
 
     def on_nav_change(idx):
-        if idx != 5:
+        if idx != 6:
             settings_refresh_ref[0] = None
 
         if idx == 0:
@@ -1876,6 +1927,10 @@ def main(page: ft.Page):
                 refresh_callback=global_refresh_action,
             )
         elif idx == 5:
+            content_area.content = get_processes_view(
+                show_custom_dialog, process_view_refresh_ref
+            )
+        elif idx == 6:
             content_area.content = get_settings_view(
                 page,
                 navbar_ref,
