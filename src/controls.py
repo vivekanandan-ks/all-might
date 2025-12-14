@@ -1414,7 +1414,9 @@ class NixPackageCard(GlassContainer):
             close_dialog(e)
 
         close_btn = ft.TextButton("Close", on_click=close_dialog, visible=False)
-        cancel_btn = ft.TextButton("Cancel Process", on_click=cancel_process, visible=True)
+        cancel_btn = ft.TextButton(
+            "Cancel Process", on_click=cancel_process, visible=True
+        )
 
         if self.show_dialog:
             close_func[0] = self.show_dialog(
@@ -1492,8 +1494,8 @@ class NixPackageCard(GlassContainer):
                         self.on_install_change()
                 else:
                     # If cancelled (negative return code usually), don't show error if we know it was cancelled
-                    if process.returncode != -15: # SIGTERM
-                         output_column.controls.append(
+                    if process.returncode != -15:  # SIGTERM
+                        output_column.controls.append(
                             ft.Text(
                                 f"Process exited with code {process.returncode}",
                                 color="red",
@@ -1521,9 +1523,9 @@ class NixPackageCard(GlassContainer):
         # We try to use self.element_name first (from listing), then fallback to state cache.
         target = self.element_name
         if not target:
-             element_key = state.get_element_key(self.pname)
-             target = element_key if element_key else self.pname
-        
+            element_key = state.get_element_key(self.pname)
+            target = element_key if element_key else self.pname
+
         final_cmd = f"nix profile remove {target}"
 
         def do_uninstall():
