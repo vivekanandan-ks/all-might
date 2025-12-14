@@ -4,6 +4,8 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     flake-parts.url = "github:hercules-ci/flake-parts";
+    nixgl.url = "github:guibou/nixGL";
+    nixgl.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
@@ -17,18 +19,18 @@
       ];
 
       perSystem =
-        { pkgs, ... }:
+        { self', inputs', pkgs, ... }:
         let
           fletRuntimeLibs = with pkgs; [
-            #gtk3
-            #gst_all_1.gstreamer
-            #gst_all_1.gst-plugins-base
-            #gst_all_1.gst-plugins-good
-            #gst_all_1.gst-plugins-bad
-            #gst_all_1.gst-plugins-ugly
+            gtk3
+            gst_all_1.gstreamer
+            gst_all_1.gst-plugins-base
+            gst_all_1.gst-plugins-good
+            gst_all_1.gst-plugins-bad
+            gst_all_1.gst-plugins-ugly
             libglvnd # For OpenGL
-            #xorg.libX11
-            #wayland
+            xorg.libX11
+            wayland
           ];
 
           pythonEnv = pkgs.python313.withPackages (ps: with ps; [
@@ -56,9 +58,15 @@
             meta = with pkgs.lib; {
               description = "GUI App store like experience for nixpkgs";
               mainProgram = "all-might";
-              #platforms = platforms.linux;
+              platforms = platforms.linux;
             };
           };
+
+          packages.non-nixos = let
+            nixGL = inputs'.nixgl.packages.nixGLDefault;
+          in pkgs.writeShellScriptBin "all-might" ''
+            exec ${nixGL}/bin/nixGL ${self'.packages.default}/bin/all-might "$@"
+          '';
 
           # 1. Define the development shell
           devShells.default =
@@ -71,10 +79,10 @@
                 pythonEnv
               ];
 
-              # Runtime libraries required by Flet/Flutter on Linux
-              # We export these to LD_LIBRARY_PATH so the Flet binary can find them at runtime.
               env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath fletRuntimeLibs;
 
+              # Runtime libraries required by Flet/Flutter on Linux
+              # We export these to LD_LIBRARY_PATH so the Flet binary can find them at runtime.
               shellHook =
                 ''
                   echo "🚀 Flet Dev Shell Activated!"
