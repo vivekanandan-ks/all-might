@@ -12,7 +12,7 @@ from constants import *
 class AppState:
     def __init__(self):
         self.username = "user"
-        self.default_channel = "nixos-24.11"
+        self.default_channel = "nixos-25.11"
         self.confirm_timer = 5
         self.undo_timer = 5
         self.nav_badge_size = 20
@@ -152,10 +152,10 @@ class AppState:
         self.shell_cart_suffix = ""
 
         self.available_channels = [
-            "nixos-unstable", "nixos-24.11", "nixos-24.05"
+            "nixos-unstable", "nixos-25.11"
         ]
         self.active_channels = [
-            "nixos-unstable", "nixos-24.11"
+            "nixos-unstable", "nixos-25.11"
         ]
         self.cart_items = []
         self.favourites = []
