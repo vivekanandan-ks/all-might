@@ -10,6 +10,7 @@ import urllib.request
 from urllib.parse import urljoin, urlparse
 from state import state
 from utils import execute_nix_search
+from process_popup import show_singleton_process_popup
 
 
 class TypewriterControl(ft.Text):
@@ -1390,105 +1391,27 @@ class NixPackageCard(GlassContainer):
         target = f"nixpkgs/{self.selected_channel}#{self.pname}"
         cmd = f"nix profile add {target}"
 
-        # Output Dialog
-        output_column = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
-        content_container = ft.Container(width=600, height=300, content=output_column)
-
-        close_func = [None]
         proc_ref = [None]  # Reference to hold process object for cancellation
         process_id = str(uuid.uuid4())
 
-        def close_dialog(e=None):
-            if close_func[0]:
-                close_func[0]()
-
-        def cancel_process(e):
-            if proc_ref[0]:
-                try:
-                    proc_ref[0].terminate()
-                    msg = "Process cancelled by user."
-                    output_column.controls.append(ft.Text(msg, color="red"))
-                    # Update State
-                    for p in state.active_processes:
-                        if p["id"] == process_id:
-                            p["logs"].append(msg)
-                            break
-                    state.update_process_status(process_id, "Cancelled")
-
-                    cancel_btn.disabled = True
-                    cancel_btn.text = "Cancelling..."
-                    if cancel_btn.page:
-                        cancel_btn.update()
-
-                    if output_column.page:
-                        output_column.scroll_to(offset=-1, duration=300)
-                        output_column.update()
-                except Exception as ex:
-                    print(f"Error cancelling process: {ex}")
-            # Do not close dialog immediately, let user see the message
-            # close_dialog(e)
-            # The run thread will detect exit and show Close button
-
-        def minimize_process(e):
-            if self.show_toast:
-                self.show_toast(f"Minimized {self.pname} installation")
-            state.request_pulse()
-            close_dialog(e)
-
-        close_btn = ft.TextButton("Close", on_click=close_dialog, visible=False)
-        cancel_btn = ft.TextButton(
-            "Cancel Process", on_click=cancel_process, visible=True
-        )
-
-        # Header with Minimize Icon
-        minimize_icon = ft.Container(
-            content=ft.Icon(ft.Icons.REMOVE, size=16, color="white"),
-            width=30,
-            height=30,
-            border=ft.border.all(1, ft.Colors.WHITE54),
-            border_radius=5,
-            alignment=ft.alignment.center,
-            on_click=minimize_process,
-            ink=True,
-            tooltip="Minimize",
-        )
-
-        title_row = ft.Row(
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            controls=[
-                ft.Text(
-                    f"Installing {self.pname}...",
-                    size=20,
-                    weight=ft.FontWeight.BOLD,
-                    color="onSurface",
-                ),
-                minimize_icon,
-            ],
-        )
-
         # Register Process
-        state.add_active_process(
-            {
-                "id": process_id,
-                "name": f"Installing {self.pname}",
-                "type": "install",
-                "pname": self.pname,
-                "channel": self.selected_channel,
-                "status": "Running",
-                "logs": [],
-                "timestamp": time.time(),
-                "proc_ref": proc_ref,  # Store ref to allow cancellation from Processes view if needed
-                "card_ref": self,  # Store ref to allow UI updates on completion even if minimized
-            }
-        )
+        proc_data = {
+            "id": process_id,
+            "name": f"Installing {self.pname}",
+            "type": "install",
+            "pname": self.pname,
+            "channel": self.selected_channel,
+            "status": "Running",
+            "logs": [],
+            "timestamp": time.time(),
+            "proc_ref": proc_ref,  # Store ref to allow cancellation
+            "card_ref": self,  # Store ref to allow UI updates on completion
+        }
+        state.add_active_process(proc_data)
 
         if self.show_dialog:
-            close_func[0] = self.show_dialog(
-                title_row,
-                content_container,
-                [cancel_btn, close_btn],
-                dismissible=False,
-            )
+            # Use unified Singleton ProcessPopup
+            show_singleton_process_popup(proc_data, self.show_dialog, allow_clear=False)
 
         self.page_ref.update()
 
@@ -1504,15 +1427,16 @@ class NixPackageCard(GlassContainer):
                 proc_ref[0] = process
 
                 for line in process.stdout:
-                    clean_line = line.strip()
-                    # UI Update
-                    output_column.controls.append(
-                        ft.Text(clean_line, font_family="monospace", size=12)
-                    )
-                    if output_column.page:
-                        output_column.update()
+                    # Check for cancellation request from UI
+                    if proc_data.get("user_cancelled"):
+                        try:
+                            process.kill()
+                        except Exception:
+                            pass
+                        break
 
-                    # State Update
+                    clean_line = line.strip()
+                    # State Update ONLY - UI updates handled by ProcessPopup listener
                     for p in state.active_processes:
                         if p["id"] == process_id:
                             p["logs"].append(clean_line)
@@ -1520,11 +1444,16 @@ class NixPackageCard(GlassContainer):
 
                 process.wait()
 
-                if process.returncode == 0:
+                # Ensure process is dead if cancelled
+                if proc_data.get("user_cancelled") and process.poll() is None:
+                    try:
+                        process.kill()
+                        process.wait()
+                    except Exception:
+                        pass
+
+                if process.returncode == 0 and not proc_data.get("user_cancelled"):
                     success_msg = "Installation Successful!"
-                    output_column.controls.append(
-                        ft.Text(success_msg, color="green", weight="bold")
-                    )
                     for p in state.active_processes:
                         if p["id"] == process_id:
                             p["logs"].append(success_msg)
@@ -1557,8 +1486,6 @@ class NixPackageCard(GlassContainer):
                     self.installed_version = state.get_installed_version(self.pname)
 
                     # Safe UI updates (check page)
-                    # Note: We use self.channel_dropdown etc which might be on page even if dialog is closed
-                    # But if the user navigated away, they might not be.
                     try:
                         self.channel_dropdown.items = self.build_channel_menu_items()
                         if self.channel_dropdown.page:
@@ -1583,11 +1510,15 @@ class NixPackageCard(GlassContainer):
                             is_cancelled = True
                             break
 
-                    if is_cancelled or process.returncode == -15:
+                    # Also check user_cancelled flag set by popup
+                    if (
+                        is_cancelled
+                        or process.returncode == -15
+                        or proc_data.get("user_cancelled")
+                    ):
                         state.update_process_status(process_id, "Cancelled")
                     else:
                         err_msg = f"Process exited with code {process.returncode}"
-                        output_column.controls.append(ft.Text(err_msg, color="red"))
                         for p in state.active_processes:
                             if p["id"] == process_id:
                                 p["logs"].append(err_msg)
@@ -1596,31 +1527,14 @@ class NixPackageCard(GlassContainer):
 
             except Exception as ex:
                 err_msg = f"Error: {ex}"
-                output_column.controls.append(ft.Text(err_msg, color="red"))
                 for p in state.active_processes:
                     if p["id"] == process_id:
                         p["logs"].append(err_msg)
                         break
                 state.update_process_status(process_id, "Error")
 
-            # Show close button, hide cancel/minimize
-            close_btn.visible = True
-            cancel_btn.visible = False
-            if close_btn.page:
-                close_btn.update()
-            if cancel_btn.page:
-                cancel_btn.update()
-            if output_column.page:
-                output_column.update()
-
-            # Remove from active processes list after a short delay or keep it as history?
-            # User wants to "reopen" popup. So we should keep it until closed from "Processes" tab or dismissed.
-            # But the user said "minimize".
-            # Usually completed processes stay in list until dismissed.
-
             # Notify state listener to update badge
-            if state.on_process_update:
-                state.on_process_update()
+            state.notify_process_update()
 
         threading.Thread(target=run, daemon=True).start()
 

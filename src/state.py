@@ -170,12 +170,28 @@ class AppState:
 
         # Active Processes
         self.active_processes = []
-        self.on_process_update = None
+        self.active_process_popups = {}
+        self.process_listeners = []
         self.on_pulse_request = None
 
         self.load_settings()
         self.load_tracking()
         self.update_daily_indices()
+
+    def add_process_listener(self, cb):
+        if cb not in self.process_listeners:
+            self.process_listeners.append(cb)
+
+    def remove_process_listener(self, cb):
+        if cb in self.process_listeners:
+            self.process_listeners.remove(cb)
+
+    def notify_process_update(self):
+        for cb in self.process_listeners:
+            try:
+                cb()
+            except Exception as e:
+                print(f"Error in process listener: {e}")
 
     def update_daily_indices(self):
         today = datetime.date.today().isoformat()
@@ -929,23 +945,20 @@ class AppState:
 
     def add_active_process(self, process_data):
         self.active_processes.append(process_data)
-        if self.on_process_update:
-            self.on_process_update()
+        self.notify_process_update()
 
     def remove_active_process(self, process_id):
         self.active_processes = [
             p for p in self.active_processes if p["id"] != process_id
         ]
-        if self.on_process_update:
-            self.on_process_update()
+        self.notify_process_update()
 
     def update_process_status(self, process_id, status):
         for p in self.active_processes:
             if p["id"] == process_id:
                 p["status"] = status
                 break
-        if self.on_process_update:
-            self.on_process_update()
+        self.notify_process_update()
 
     def request_pulse(self):
         if self.on_pulse_request:

@@ -888,10 +888,13 @@ def main(page: ft.Page):
     state.on_pulse_request = start_pulse_animation
 
     def update_processes_badge():
-        count = len(state.active_processes)
-        processes_badge_count.value = str(count)
+        # Count only active "Running" processes
+        running_count = sum(
+            1 for p in state.active_processes if p.get("status") == "Running"
+        )
+        processes_badge_count.value = str(running_count)
         if processes_badge_container.page:
-            processes_badge_container.visible = count > 0
+            processes_badge_container.visible = running_count > 0
             processes_badge_container.update()
 
     def on_global_process_update():
@@ -902,7 +905,7 @@ def main(page: ft.Page):
             except Exception:
                 pass
 
-    state.on_process_update = on_global_process_update
+    state.add_process_listener(on_global_process_update)
 
     def update_lists_badge():
         count = len(state.saved_lists)
