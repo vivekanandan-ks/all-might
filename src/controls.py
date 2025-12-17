@@ -5,12 +5,11 @@ import threading
 import time
 import subprocess
 import re
-import uuid
 import urllib.request
 from urllib.parse import urljoin, urlparse
 from state import state
 from utils import execute_nix_search
-from process_popup import show_singleton_process_popup
+from process_view import ProcessView
 
 
 class TypewriterControl(ft.Text):
@@ -1391,152 +1390,56 @@ class NixPackageCard(GlassContainer):
         target = f"nixpkgs/{self.selected_channel}#{self.pname}"
         cmd = f"nix profile add {target}"
 
-        proc_ref = [None]  # Reference to hold process object for cancellation
-        process_id = str(uuid.uuid4())
+        def on_complete(success):
+            if success:
+                file_path = self.pkg.get("package_position", "").split(":")[0]
+                source_url = (
+                    f"https://github.com/NixOS/nixpkgs/blob/master/{file_path}"
+                    if file_path
+                    else ""
+                )
 
-        # Register Process
-        proc_data = {
-            "id": process_id,
-            "name": f"Installing {self.pname}",
-            "type": "install",
-            "pname": self.pname,
-            "channel": self.selected_channel,
-            "status": "Running",
-            "logs": [],
-            "timestamp": time.time(),
-            "proc_ref": proc_ref,  # Store ref to allow cancellation
-            "card_ref": self,  # Store ref to allow UI updates on completion
-        }
-        state.add_active_process(proc_data)
+                state.track_install(
+                    self.pname,
+                    self.selected_channel,
+                    attr_name=self.attr_name,
+                    version=self.version,
+                    description=self.pkg.get("package_description"),
+                    homepage=self.pkg.get("package_homepage", []),
+                    license_set=self.pkg.get("package_license_set", []),
+                    source_url=source_url,
+                    programs=self.programs_list,
+                )
+                state.refresh_installed_cache()
+
+                self.is_installed = True
+                self.is_all_might = True
+                self.installed_version = state.get_installed_version(self.pname)
+
+                # Safe UI updates
+                try:
+                    self.channel_dropdown.items = self.build_channel_menu_items()
+                    if self.channel_dropdown.page:
+                        self.channel_dropdown.update()
+
+                    self.install_btn.visible = False
+                    self.uninstall_btn.visible = True
+                    if self.page_ref:
+                        self.update()
+                except Exception:
+                    pass
+
+                if self.on_cart_change:
+                    self.on_cart_change()
+                if self.on_install_change:
+                    self.on_install_change()
+
+        view = ProcessView(f"Installing {self.pname}", cmd, on_complete)
 
         if self.show_dialog:
-            # Use unified Singleton ProcessPopup
-            show_singleton_process_popup(proc_data, self.show_dialog, allow_clear=False)
+            view.show(self.show_dialog)
 
-        self.page_ref.update()
-
-        def run():
-            try:
-                process = subprocess.Popen(
-                    shlex.split(cmd),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                )
-                proc_ref[0] = process
-
-                for line in process.stdout:
-                    # Check for cancellation request from UI
-                    if proc_data.get("user_cancelled"):
-                        try:
-                            process.kill()
-                        except Exception:
-                            pass
-                        break
-
-                    clean_line = line.strip()
-                    # State Update ONLY - UI updates handled by ProcessPopup listener
-                    for p in state.active_processes:
-                        if p["id"] == process_id:
-                            p["logs"].append(clean_line)
-                            break
-
-                process.wait()
-
-                # Ensure process is dead if cancelled
-                if proc_data.get("user_cancelled") and process.poll() is None:
-                    try:
-                        process.kill()
-                        process.wait()
-                    except Exception:
-                        pass
-
-                if process.returncode == 0 and not proc_data.get("user_cancelled"):
-                    success_msg = "Installation Successful!"
-                    for p in state.active_processes:
-                        if p["id"] == process_id:
-                            p["logs"].append(success_msg)
-                            break
-                    state.update_process_status(process_id, "Completed")
-
-                    file_path = self.pkg.get("package_position", "").split(":")[0]
-                    source_url = (
-                        f"https://github.com/NixOS/nixpkgs/blob/master/{file_path}"
-                        if file_path
-                        else ""
-                    )
-
-                    state.track_install(
-                        self.pname,
-                        self.selected_channel,
-                        attr_name=self.attr_name,
-                        version=self.version,
-                        description=self.pkg.get("package_description"),
-                        homepage=self.pkg.get("package_homepage", []),
-                        license_set=self.pkg.get("package_license_set", []),
-                        source_url=source_url,
-                        programs=self.programs_list,
-                    )
-                    state.refresh_installed_cache()
-
-                    self.is_installed = True
-                    self.is_all_might = True
-
-                    self.installed_version = state.get_installed_version(self.pname)
-
-                    # Safe UI updates (check page)
-                    try:
-                        self.channel_dropdown.items = self.build_channel_menu_items()
-                        if self.channel_dropdown.page:
-                            self.channel_dropdown.update()
-
-                        self.install_btn.visible = False
-                        self.uninstall_btn.visible = True
-                        if self.page_ref:
-                            self.update()
-                    except Exception:
-                        pass  # UI might be gone
-
-                    if self.on_cart_change:
-                        self.on_cart_change()
-                    if self.on_install_change:
-                        self.on_install_change()
-                else:
-                    # Check if already cancelled
-                    is_cancelled = False
-                    for p in state.active_processes:
-                        if p["id"] == process_id and p.get("status") == "Cancelled":
-                            is_cancelled = True
-                            break
-
-                    # Also check user_cancelled flag set by popup
-                    if (
-                        is_cancelled
-                        or process.returncode == -15
-                        or proc_data.get("user_cancelled")
-                    ):
-                        state.update_process_status(process_id, "Cancelled")
-                    else:
-                        err_msg = f"Process exited with code {process.returncode}"
-                        for p in state.active_processes:
-                            if p["id"] == process_id:
-                                p["logs"].append(err_msg)
-                                break
-                        state.update_process_status(process_id, "Failed")
-
-            except Exception as ex:
-                err_msg = f"Error: {ex}"
-                for p in state.active_processes:
-                    if p["id"] == process_id:
-                        p["logs"].append(err_msg)
-                        break
-                state.update_process_status(process_id, "Error")
-
-            # Notify state listener to update badge
-            state.notify_process_update()
-
-        threading.Thread(target=run, daemon=True).start()
+        view.start()
 
     def handle_uninstall_request(self, e):
         # Target: User requested flake ref format for tooltip/display,

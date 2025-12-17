@@ -74,9 +74,12 @@
               name = "flet-dev-shell";
 
               # Packages available in the environment
-              packages = [
+              packages = with pkgs; [
                 # The Python environment with Flet installed declaratively
                 pythonEnv
+                ruff
+                ty
+                
               ];
 
               env.LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath fletRuntimeLibs;

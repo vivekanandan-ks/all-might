@@ -21,7 +21,7 @@ from views import (
     get_lists_view,
     get_settings_view,
 )
-from process_views import get_processes_view
+from process_page import get_process_page
 from updates import get_installed_view
 from utils import execute_nix_search
 
@@ -830,7 +830,7 @@ def main(page: ft.Page):
     )
 
     processes_badge_count = ft.Text(
-        str(len(state.active_processes)),
+        "0",
         size=max(8, badge_size_val / 2),
         color=ft.Colors.WHITE,
         weight=ft.FontWeight.BOLD,
@@ -843,69 +843,23 @@ def main(page: ft.Page):
         height=badge_size_val,
         border_radius=badge_size_val / 2,
         alignment=ft.alignment.center,
-        visible=len(state.active_processes) > 0,
+        visible=False,
         top=2,
         right=2,
         animate_scale=ft.Animation(300, ft.AnimationCurve.EASE_OUT),
         scale=1.0,
     )
 
-    process_view_refresh_ref = [None]
-
-    # Pulse animation state
-    pulse_deadline = [0.0]
-
-    def start_pulse_animation():
-        pulse_deadline[0] = time.time() + 5.0
-
-    def badge_pulse_loop():
-        while True:
-            if time.time() < pulse_deadline[0]:
-                try:
-                    processes_badge_container.scale = 1.3
-                    if processes_badge_container.page:
-                        processes_badge_container.update()
-                    time.sleep(0.4)
-                    processes_badge_container.scale = 1.0
-                    if processes_badge_container.page:
-                        processes_badge_container.update()
-                    time.sleep(0.4)
-                except Exception:
-                    break
-            else:
-                # Reset if needed
-                if processes_badge_container.scale != 1.0:
-                    processes_badge_container.scale = 1.0
-                    try:
-                        if processes_badge_container.page:
-                            processes_badge_container.update()
-                    except Exception:
-                        pass
-                time.sleep(0.5)
-
-    threading.Thread(target=badge_pulse_loop, daemon=True).start()
-
-    state.on_pulse_request = start_pulse_animation
-
     def update_processes_badge():
-        # Count only active "Running" processes
         running_count = sum(
-            1 for p in state.active_processes if p.get("status") == "Running"
+            1 for v in state.active_process_views.values() if v.is_running
         )
         processes_badge_count.value = str(running_count)
         if processes_badge_container.page:
             processes_badge_container.visible = running_count > 0
             processes_badge_container.update()
 
-    def on_global_process_update():
-        update_processes_badge()
-        if process_view_refresh_ref[0]:
-            try:
-                process_view_refresh_ref[0]()
-            except Exception:
-                pass
-
-    state.add_process_listener(on_global_process_update)
+    state.add_process_listener(update_processes_badge)
 
     def update_lists_badge():
         count = len(state.saved_lists)
@@ -1972,9 +1926,7 @@ def main(page: ft.Page):
                 refresh_callback=global_refresh_action,
             )
         elif idx == 5:
-            content_area.content = get_processes_view(
-                show_custom_dialog, process_view_refresh_ref
-            )
+            content_area.content = get_process_page(show_custom_dialog)
         elif idx == 6:
             content_area.content = get_settings_view(
                 page,

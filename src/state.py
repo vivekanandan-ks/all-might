@@ -155,6 +155,10 @@ class AppState:
         # History
         self.recent_activity = []
 
+        # Active Process Views (New Feature)
+        self.active_process_views = {}
+        self.process_listeners = []
+
         # Separate configs for Single App vs Cart
         self.shell_single_prefix = "x-terminal-emulator -e"
         self.shell_single_suffix = ""
@@ -168,30 +172,9 @@ class AppState:
         self.saved_lists = {}
         self.tracked_installs = {}
 
-        # Active Processes
-        self.active_processes = []
-        self.active_process_popups = {}
-        self.process_listeners = []
-        self.on_pulse_request = None
-
         self.load_settings()
         self.load_tracking()
         self.update_daily_indices()
-
-    def add_process_listener(self, cb):
-        if cb not in self.process_listeners:
-            self.process_listeners.append(cb)
-
-    def remove_process_listener(self, cb):
-        if cb in self.process_listeners:
-            self.process_listeners.remove(cb)
-
-    def notify_process_update(self):
-        for cb in self.process_listeners:
-            try:
-                cb()
-            except Exception as e:
-                print(f"Error in process listener: {e}")
 
     def update_daily_indices(self):
         today = datetime.date.today().isoformat()
@@ -943,26 +926,33 @@ class AppState:
             return self.installed_items[pname][0]["key"]
         return None
 
-    def add_active_process(self, process_data):
-        self.active_processes.append(process_data)
+    # --- Process Management ---
+    def add_process_listener(self, cb):
+        if cb not in self.process_listeners:
+            self.process_listeners.append(cb)
+
+    def remove_process_listener(self, cb):
+        if cb in self.process_listeners:
+            self.process_listeners.remove(cb)
+
+    def notify_process_update(self):
+        for cb in self.process_listeners:
+            try:
+                cb()
+            except Exception as e:
+                print(f"Error in process listener: {e}")
+
+    def add_process_view(self, process_id, view_instance):
+        self.active_process_views[process_id] = view_instance
         self.notify_process_update()
 
-    def remove_active_process(self, process_id):
-        self.active_processes = [
-            p for p in self.active_processes if p["id"] != process_id
-        ]
-        self.notify_process_update()
+    def remove_process_view(self, process_id):
+        if process_id in self.active_process_views:
+            del self.active_process_views[process_id]
+            self.notify_process_update()
 
-    def update_process_status(self, process_id, status):
-        for p in self.active_processes:
-            if p["id"] == process_id:
-                p["status"] = status
-                break
-        self.notify_process_update()
-
-    def request_pulse(self):
-        if self.on_pulse_request:
-            self.on_pulse_request()
+    def get_process_view(self, process_id):
+        return self.active_process_views.get(process_id)
 
 
 state = AppState()
