@@ -15,7 +15,11 @@ from constants import (
     CONFIG_FILE,
     CONFIG_DIR,
     TRACKING_FILE,
+    PROCESSES_FILE,
 )
+# We can't import ProcessView here due to circular import if ProcessView imports state
+# Solution: Import ProcessView inside the method or use a registry pattern.
+# For now, we'll do local import.
 
 
 # --- State Management ---
@@ -155,6 +159,10 @@ class AppState:
         # History
         self.recent_activity = []
 
+        # Active Process Views (New Feature)
+        self.active_process_views = {}
+        self.process_listeners = []
+
         # Separate configs for Single App vs Cart
         self.shell_single_prefix = "x-terminal-emulator -e"
         self.shell_single_suffix = ""
@@ -167,6 +175,7 @@ class AppState:
         self.favourites = []
         self.saved_lists = {}
         self.tracked_installs = {}
+
         self.load_settings()
         self.load_tracking()
         self.update_daily_indices()
@@ -921,6 +930,69 @@ class AppState:
             return self.installed_items[pname][0]["key"]
         return None
 
+    # --- Process Management ---
+    def add_process_listener(self, cb):
+        if cb not in self.process_listeners:
+            self.process_listeners.append(cb)
+
+    def remove_process_listener(self, cb):
+        if cb in self.process_listeners:
+            self.process_listeners.remove(cb)
+
+    def notify_process_update(self):
+        # We save on significant updates (add/remove).
+        # For status updates (start/finish), the ProcessView should ideally call a save,
+        # but since ProcessView is decoupled, we might need to rely on the listener?
+        # Actually, ProcessView calls notify_process_update(). So we can save here.
+        # But saving on every log line (ProcessView updates UI on log) is bad.
+        # ProcessView only calls notify_process_update() on start and finish.
+        # It updates UI elements directly for logs.
+        # So it IS safe to save here.
+        self.save_processes()
+
+        for cb in self.process_listeners:
+            try:
+                cb()
+            except Exception as e:
+                print(f"Error in process listener: {e}")
+
+    def add_process_view(self, process_id, view_instance):
+        self.active_process_views[process_id] = view_instance
+        self.notify_process_update()
+
+    def remove_process_view(self, process_id):
+        if process_id in self.active_process_views:
+            del self.active_process_views[process_id]
+            self.notify_process_update()
+
+    def get_process_view(self, process_id):
+        return self.active_process_views.get(process_id)
+
+    def load_processes(self):
+        if os.path.exists(PROCESSES_FILE):
+            try:
+                # Local import to avoid circular dependency
+                from process_view import ProcessView
+
+                with open(PROCESSES_FILE, "r") as f:
+                    data = json.load(f)
+
+                for p_data in data:
+                    # We pass None for on_complete as these are historical records
+                    view = ProcessView.from_dict(p_data, on_complete_placeholder=None)
+                    self.active_process_views[view.id] = view
+            except Exception as e:
+                print(f"Error loading processes: {e}")
+
+    def save_processes(self):
+        try:
+            data = [v.to_dict() for v in self.active_process_views.values()]
+            with open(PROCESSES_FILE, "w") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            print(f"Error saving processes: {e}")
+
 
 state = AppState()
+state.load_processes()
 state.refresh_installed_cache()

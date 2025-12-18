@@ -9,6 +9,7 @@ import urllib.request
 from urllib.parse import urljoin, urlparse
 from state import state
 from utils import execute_nix_search
+from process_view import ProcessView
 
 
 class TypewriterControl(ft.Text):
@@ -1389,97 +1390,34 @@ class NixPackageCard(GlassContainer):
         target = f"nixpkgs/{self.selected_channel}#{self.pname}"
         cmd = f"nix profile add {target}"
 
-        # Output Dialog
-        output_column = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
-        content_container = ft.Container(width=600, height=300, content=output_column)
-
-        close_func = [None]
-        proc_ref = [None]  # Reference to hold process object for cancellation
-
-        def close_dialog(e):
-            if close_func[0]:
-                close_func[0]()
-
-        def cancel_process(e):
-            if proc_ref[0]:
-                try:
-                    proc_ref[0].terminate()
-                    output_column.controls.append(
-                        ft.Text("Process cancelled by user.", color="red")
-                    )
-                    if output_column.page:
-                        output_column.update()
-                except Exception as ex:
-                    print(f"Error cancelling process: {ex}")
-            close_dialog(e)
-
-        close_btn = ft.TextButton("Close", on_click=close_dialog, visible=False)
-        cancel_btn = ft.TextButton(
-            "Cancel Process", on_click=cancel_process, visible=True
-        )
-
-        if self.show_dialog:
-            close_func[0] = self.show_dialog(
-                f"Installing {self.pname}...",
-                content_container,
-                [cancel_btn, close_btn],
-                dismissible=False,
-            )
-
-        self.page_ref.update()
-
-        def run():
-            try:
-                process = subprocess.Popen(
-                    shlex.split(cmd),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
+        def on_complete(success):
+            if success:
+                file_path = self.pkg.get("package_position", "").split(":")[0]
+                source_url = (
+                    f"https://github.com/NixOS/nixpkgs/blob/master/{file_path}"
+                    if file_path
+                    else ""
                 )
-                proc_ref[0] = process
 
-                for line in process.stdout:
-                    output_column.controls.append(
-                        ft.Text(line.strip(), font_family="monospace", size=12)
-                    )
-                    if output_column.page:
-                        output_column.update()
+                state.track_install(
+                    self.pname,
+                    self.selected_channel,
+                    attr_name=self.attr_name,
+                    version=self.version,
+                    description=self.pkg.get("package_description"),
+                    homepage=self.pkg.get("package_homepage", []),
+                    license_set=self.pkg.get("package_license_set", []),
+                    source_url=source_url,
+                    programs=self.programs_list,
+                )
+                state.refresh_installed_cache()
 
-                process.wait()
+                self.is_installed = True
+                self.is_all_might = True
+                self.installed_version = state.get_installed_version(self.pname)
 
-                if process.returncode == 0:
-                    output_column.controls.append(
-                        ft.Text(
-                            "Installation Successful!", color="green", weight="bold"
-                        )
-                    )
-
-                    file_path = self.pkg.get("package_position", "").split(":")[0]
-                    source_url = (
-                        f"https://github.com/NixOS/nixpkgs/blob/master/{file_path}"
-                        if file_path
-                        else ""
-                    )
-
-                    state.track_install(
-                        self.pname,
-                        self.selected_channel,
-                        attr_name=self.attr_name,
-                        version=self.version,
-                        description=self.pkg.get("package_description"),
-                        homepage=self.pkg.get("package_homepage", []),
-                        license_set=self.pkg.get("package_license_set", []),
-                        source_url=source_url,
-                        programs=self.programs_list,
-                    )
-                    state.refresh_installed_cache()
-
-                    self.is_installed = True
-                    self.is_all_might = True
-
-                    self.installed_version = state.get_installed_version(self.pname)
-
+                # Safe UI updates
+                try:
                     self.channel_dropdown.items = self.build_channel_menu_items()
                     if self.channel_dropdown.page:
                         self.channel_dropdown.update()
@@ -1488,34 +1426,20 @@ class NixPackageCard(GlassContainer):
                     self.uninstall_btn.visible = True
                     if self.page_ref:
                         self.update()
-                    if self.on_cart_change:
-                        self.on_cart_change()
-                    if self.on_install_change:
-                        self.on_install_change()
-                else:
-                    # If cancelled (negative return code usually), don't show error if we know it was cancelled
-                    if process.returncode != -15:  # SIGTERM
-                        output_column.controls.append(
-                            ft.Text(
-                                f"Process exited with code {process.returncode}",
-                                color="red",
-                            )
-                        )
+                except Exception:
+                    pass
 
-            except Exception as ex:
-                output_column.controls.append(ft.Text(f"Error: {ex}", color="red"))
+                if self.on_cart_change:
+                    self.on_cart_change()
+                if self.on_install_change:
+                    self.on_install_change()
 
-            # Show close button, hide cancel
-            close_btn.visible = True
-            cancel_btn.visible = False
-            if close_btn.page:
-                close_btn.update()
-            if cancel_btn.page:
-                cancel_btn.update()
-            if output_column.page:
-                output_column.update()
+        view = ProcessView(f"Installing {self.pname}", cmd, on_complete)
 
-        threading.Thread(target=run, daemon=True).start()
+        if self.show_dialog:
+            view.show(self.show_dialog)
+
+        view.start()
 
     def handle_uninstall_request(self, e):
         # Target: User requested flake ref format for tooltip/display,

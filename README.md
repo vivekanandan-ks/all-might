@@ -2,12 +2,12 @@
 
 1) For nixos:
 ```bash
-nix run github:vivekanandan-ks/all-might/feat-appbuild --impure --no-write-lock-file
+nix run github:vivekanandan-ks/all-might --impure --no-write-lock-file
 ```
 
 2) For other distros:
 ```bash
-nix run github:vivekanandan-ks/all-might/feat-appbuild#non-nixos --impure --no-write-lock-file
+nix run github:vivekanandan-ks/all-might#non-nixos --impure --no-write-lock-file
 ```
 
 3) Manually through shell:
