@@ -163,8 +163,6 @@ class AppState:
         self.active_process_views = {}
         self.process_listeners = []
 
-        self.load_processes()
-
         # Separate configs for Single App vs Cart
         self.shell_single_prefix = "x-terminal-emulator -e"
         self.shell_single_suffix = ""
@@ -996,4 +994,5 @@ class AppState:
 
 
 state = AppState()
+state.load_processes()
 state.refresh_installed_cache()
