@@ -20,9 +20,48 @@ class ProcessView:
         self.return_code = None
         self.process = None
         self.is_running = False
+        self.was_cancelled = False  # Track user cancellation intent
 
         self.close_dialog_func = None
         self.active_ui_refs = None  # To hold current UI controls (log_view, action_row)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "created_at": self.created_at,
+            "title": self.title,
+            "cmd": self.cmd,
+            "status": self.status,
+            "logs": self.logs,
+            "return_code": self.return_code,
+            # We don't save is_running as True, because if we reload, it's not running anymore
+            "is_running": False,
+            "was_cancelled": self.was_cancelled,
+        }
+
+    @classmethod
+    def from_dict(cls, data, on_complete_placeholder=None):
+        instance = cls(
+            title=data.get("title", "Unknown Process"),
+            cmd=data.get("cmd", ""),
+            on_complete=on_complete_placeholder,
+        )
+        instance.id = data.get("id", str(uuid.uuid4()))
+        instance.created_at = data.get("created_at", time.time())
+        instance.status = data.get("status", "Pending")
+        instance.logs = data.get("logs", [])
+        instance.return_code = data.get("return_code")
+        instance.is_running = (
+            False  # data.get("is_running", False) -> force False on load
+        )
+        instance.was_cancelled = data.get("was_cancelled", False)
+
+        # If it was marked running but we reloaded, it's effectively interrupted/failed
+        if data.get("is_running", False):
+            instance.status = "Interrupted"
+            instance.logs.append("Process interrupted by application restart.")
+
+        return instance
 
     def _build_ui(self):
         # Create fresh controls populated with current state
@@ -124,6 +163,7 @@ class ProcessView:
 
     def cancel(self):
         if self.process and self.is_running:
+            self.was_cancelled = True
             # Immediate feedback via refs
             if self.active_ui_refs:
                 try:
@@ -202,6 +242,9 @@ class ProcessView:
     def start(self):
         self.is_running = True
         self.status = "Running"
+        # Initial Log to ensure container is not empty/broken visually
+        self.logs.append("Initializing process...")
+
         # Register in global state
         state.add_process_view(self.id, self)
 
@@ -242,7 +285,8 @@ class ProcessView:
             self.process.wait()
             self.return_code = self.process.returncode
 
-            if self.return_code < 0:
+            # Check logic: user explicitly cancelled OR process returned negative code (signal)
+            if self.was_cancelled or self.return_code < 0:
                 self.status = "Cancelled"
             elif self.return_code == 0:
                 self.status = "Completed"

@@ -1926,7 +1926,9 @@ def main(page: ft.Page):
                 refresh_callback=global_refresh_action,
             )
         elif idx == 5:
-            content_area.content = get_process_page(show_custom_dialog)
+            content_area.content = get_process_page(
+                show_custom_dialog, show_destructive_dialog, show_undo_toast
+            )
         elif idx == 6:
             content_area.content = get_settings_view(
                 page,
