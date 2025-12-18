@@ -1463,15 +1463,22 @@ def main(page: ft.Page):
         # Clear All Option
         def clear_all_click(e):
             old_hist = list(state.search_history)
-            state.clear_search_history()
-            hide_suggestions()
-            show_toast("History cleared")
 
-            def on_undo():
-                state.restore_search_history(old_hist)
-                show_toast("History restored")
+            def do_clear(e):
+                state.clear_search_history()
+                hide_suggestions()
 
-            show_undo_toast("History cleared", on_undo)
+                def on_undo():
+                    state.restore_search_history(old_hist)
+                    show_toast("History restored")
+
+                show_undo_toast("History cleared", on_undo)
+
+            show_destructive_dialog(
+                "Clear History?",
+                "Are you sure you want to clear all search history?",
+                do_clear,
+            )
 
         suggestions_col.controls.append(
             ft.Container(
