@@ -1400,7 +1400,7 @@ def main(page: ft.Page):
         padding=0,
         blur_sigma=20,
         border_radius=ft.border_radius.only(bottom_left=15, bottom_right=15),
-        bgcolor=ft.Colors.with_opacity(0.9, ft.Colors.BLACK),
+        bgcolor=ft.Colors.with_opacity(0.6, ft.Colors.BLACK),
     )
 
     suggestions_dismiss_layer = ft.Container(
