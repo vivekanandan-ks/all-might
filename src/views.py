@@ -37,6 +37,7 @@ def get_search_view(
     filter_badge_container,
     toggle_filter_menu,
     refresh_callback=None,
+    suggestions_overlay=None,
 ):
     # channel_dropdown is now a GlassContainer pre-styled in main.py
 
@@ -76,24 +77,33 @@ def get_search_view(
             )
         )
 
+    main_content = ft.Column(
+        controls=[
+            ft.Row(controls=header_controls),
+            result_count_text,
+            ft.Container(
+                expand=True,
+                content=ft.Column(
+                    expand=True,
+                    scroll=ft.ScrollMode.AUTO,
+                    controls=[
+                        results_column,
+                        ft.Container(height=100),  # Spacer for bottom nav
+                    ],
+                ),
+            ),
+        ]
+    )
+
+    content_stack = [main_content]
+    if suggestions_overlay:
+        content_stack.append(suggestions_overlay)
+
     return ft.Container(
         expand=True,
-        content=ft.Column(
-            controls=[
-                ft.Row(controls=header_controls),
-                result_count_text,
-                ft.Container(
-                    expand=True,
-                    content=ft.Column(
-                        expand=True,
-                        scroll=ft.ScrollMode.AUTO,
-                        controls=[
-                            results_column,
-                            ft.Container(height=100),  # Spacer for bottom nav
-                        ],
-                    ),
-                ),
-            ]
+        content=ft.Stack(
+            controls=content_stack,
+            expand=True,
         ),
     )
 
@@ -1150,6 +1160,7 @@ def get_settings_view(
         "profile",
         "channels",
         "run_config",
+        "history",
         "home_config",
         "installed",
         "debug",
@@ -2653,7 +2664,132 @@ def get_settings_view(
 
     def get_settings_controls(category):
         controls_list = []
-        if category == "home_config":
+        if category == "history":
+
+            def update_enable_history(e):
+                state.enable_search_history = e.control.value
+                state.save_settings()
+
+            def update_history_limit(e):
+                state.search_history_limit = int(e.control.value)
+                state.save_settings()
+                txt_history_limit.value = str(int(e.control.value))
+                txt_history_limit.update()
+
+            def update_max_suggestions(e):
+                state.max_search_suggestions = int(e.control.value)
+                state.save_settings()
+                txt_max_suggestions.value = str(int(e.control.value))
+                txt_max_suggestions.update()
+
+            def update_fuzzy_search(e):
+                state.fuzzy_search_history = e.control.value
+                state.save_settings()
+
+            def clear_search_history_action(e):
+                old_history = list(state.search_history)
+
+                def do_clear_with_undo(e):
+                    state.clear_search_history()
+
+                    def on_undo():
+                        state.restore_search_history(old_history)
+                        show_toast("Search history restored")
+
+                    show_undo_toast("Search history cleared", on_undo)
+
+                show_destructive_dialog(
+                    "Clear Search History?",
+                    "Are you sure you want to delete all search history?",
+                    do_clear_with_undo,
+                )
+
+            txt_history_limit = ft.Text(str(state.search_history_limit), width=40)
+            txt_max_suggestions = ft.Text(str(state.max_search_suggestions), width=40)
+
+            controls_list = [
+                ft.Text("Search History", size=24, weight=ft.FontWeight.BOLD),
+                ft.Divider(),
+                make_settings_tile(
+                    "Configuration",
+                    [
+                        ft.Row(
+                            [
+                                ft.Text("Enable Search History:"),
+                                ft.Switch(
+                                    value=state.enable_search_history,
+                                    on_change=update_enable_history,
+                                ),
+                            ],
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        ),
+                        ft.Container(height=10),
+                        ft.Text("History Limit (Items to save):"),
+                        ft.Row(
+                            [
+                                ft.Slider(
+                                    min=5,
+                                    max=50,
+                                    divisions=45,
+                                    value=state.search_history_limit,
+                                    label="{value}",
+                                    on_change=update_history_limit,
+                                    expand=True,
+                                ),
+                                txt_history_limit,
+                            ]
+                        ),
+                        ft.Container(height=10),
+                        ft.Text("Max Suggestions (Display):"),
+                        ft.Row(
+                            [
+                                ft.Slider(
+                                    min=1,
+                                    max=10,
+                                    divisions=9,
+                                    value=state.max_search_suggestions,
+                                    label="{value}",
+                                    on_change=update_max_suggestions,
+                                    expand=True,
+                                ),
+                                txt_max_suggestions,
+                            ]
+                        ),
+                        ft.Container(height=10),
+                        ft.Row(
+                            [
+                                ft.Text("Use Fuzzy Search for Suggestions:"),
+                                ft.Switch(
+                                    value=state.fuzzy_search_history,
+                                    on_change=update_fuzzy_search,
+                                    tooltip="Enable fuzzy matching for history suggestions (typo tolerance)",
+                                ),
+                            ],
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        ),
+                    ],
+                ),
+                ft.Container(height=10),
+                make_settings_tile(
+                    "Actions",
+                    [
+                        ft.Row(
+                            [
+                                ft.Text("Clear All History"),
+                                ft.ElevatedButton(
+                                    "Clear Now",
+                                    icon=ft.Icons.DELETE_FOREVER,
+                                    bgcolor=ft.Colors.RED_700,
+                                    color=ft.Colors.WHITE,
+                                    on_click=clear_search_history_action,
+                                ),
+                            ],
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        )
+                    ],
+                ),
+            ]
+        elif category == "home_config":
             carousel_timer_input = ft.TextField(
                 value=str(state.carousel_timer),
                 hint_text="Def: 10",
