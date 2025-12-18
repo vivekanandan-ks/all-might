@@ -3595,6 +3595,11 @@ def get_settings_view(
                 label="Run Config",
             ),
             ft.NavigationRailDestination(
+                icon=ft.Icons.HISTORY,
+                selected_icon=ft.Icons.HISTORY_TOGGLE_OFF,
+                label="History",
+            ),
+            ft.NavigationRailDestination(
                 icon=ft.Icons.HOME_OUTLINED,
                 selected_icon=ft.Icons.HOME,
                 label="Home Config",
