@@ -3,6 +3,7 @@ import time
 import threading
 import shlex
 import subprocess
+import difflib
 from collections import Counter
 from state import state
 from constants import APP_NAME
@@ -1387,7 +1388,184 @@ def main(page: ft.Page):
         if results_column.page:
             results_column.update()
 
+    # Search Suggestions Logic
+    suggestions_col = ft.Column(scroll=ft.ScrollMode.AUTO, spacing=0)
+    suggestions_container = GlassContainer(
+        content=suggestions_col,
+        visible=False,
+        top=60,  # Below header
+        left=20,
+        right=60,  # Avoid filter button area roughly
+        border=ft.border.all(1, ft.Colors.with_opacity(0.2, "white")),
+        padding=0,
+        blur_sigma=20,
+        border_radius=ft.border_radius.only(bottom_left=15, bottom_right=15),
+    )
+
+    suggestions_dismiss_layer = ft.Container(
+        expand=True,
+        visible=False,
+        bgcolor=ft.Colors.TRANSPARENT,
+    )
+
+    def hide_suggestions(e=None):
+        suggestions_container.visible = False
+        suggestions_dismiss_layer.visible = False
+        suggestions_container.update()
+        suggestions_dismiss_layer.update()
+
+    suggestions_dismiss_layer.on_click = hide_suggestions
+
+    def update_suggestions(e=None):
+        if not state.enable_search_history:
+            if suggestions_container.visible:
+                hide_suggestions()
+            return
+
+        # Don't show if disabled
+        if not state.enable_search_history:
+            return
+
+        query = search_field.value.strip() if search_field.value else ""
+        history = state.search_history
+
+        matches = []
+        if not query:
+            matches = history[: state.max_search_suggestions]  # Recent
+        else:
+            if state.fuzzy_search_history:
+                # Exact first
+                exact = [h for h in history if query.lower() in h.lower()]
+                # Fuzzy
+                fuzzy = difflib.get_close_matches(
+                    query, history, n=state.max_search_suggestions, cutoff=0.4
+                )
+                # Merge unique preserving order
+                seen = set()
+                matches = []
+                for x in exact + fuzzy:
+                    if x not in seen:
+                        matches.append(x)
+                        seen.add(x)
+            else:
+                matches = [h for h in history if query.lower() in h.lower()]
+
+        # Limit
+        matches = matches[: state.max_search_suggestions]
+
+        if not matches:
+            if suggestions_container.visible:
+                hide_suggestions()
+            return
+
+        suggestions_col.controls.clear()
+
+        # Clear All Option
+        def clear_all_click(e):
+            old_hist = list(state.search_history)
+
+            def do_clear(e):
+                state.clear_search_history()
+                hide_suggestions()
+
+                def on_undo():
+                    state.restore_search_history(old_hist)
+                    show_toast("History restored")
+
+                show_undo_toast("History cleared", on_undo)
+
+            show_destructive_dialog(
+                "Clear History?",
+                "Are you sure you want to clear all search history?",
+                do_clear,
+            )
+
+        suggestions_col.controls.append(
+            ft.Container(
+                content=ft.Row(
+                    [
+                        ft.Text("Recent Searches", size=12, color="onSurfaceVariant"),
+                        ft.TextButton(
+                            "Clear All",
+                            on_click=clear_all_click,
+                            style=ft.ButtonStyle(color=ft.Colors.RED_400),
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                padding=ft.padding.symmetric(horizontal=15, vertical=5),
+                bgcolor=ft.Colors.with_opacity(0.1, "black"),
+            )
+        )
+
+        for match in matches:
+
+            def on_click_suggestion(e, m=match):
+                search_field.value = m
+                hide_suggestions()
+                search_field.update()
+                perform_search(None)
+
+            def create_delete_handler(m):
+                def handler(e):
+                    old_history = list(state.search_history)
+                    state.remove_from_search_history(m)
+                    # Refresh suggestions immediately
+                    update_suggestions()
+
+                    def on_undo():
+                        state.restore_search_history(old_history)
+                        # Refresh suggestions if query context is similar
+                        if search_field.value.strip() == query:
+                            update_suggestions()
+                        show_toast("Restored")
+
+                    show_undo_toast("Deleted", on_undo)
+
+                return handler
+
+            suggestions_col.controls.append(
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Row(
+                                [
+                                    ft.Icon(
+                                        ft.Icons.HISTORY,
+                                        size=16,
+                                        color="onSurfaceVariant",
+                                    ),
+                                    ft.Text(match, expand=True, no_wrap=True),
+                                ],
+                                expand=True,
+                            ),
+                            ft.IconButton(
+                                ft.Icons.CLOSE,
+                                icon_size=16,
+                                icon_color="onSurfaceVariant",
+                                tooltip="Remove from history",
+                                on_click=create_delete_handler(match),
+                            ),
+                        ]
+                    ),
+                    padding=ft.padding.symmetric(horizontal=15, vertical=10),
+                    ink=True,
+                    on_click=on_click_suggestion,
+                )
+            )
+
+        suggestions_container.visible = True
+        suggestions_dismiss_layer.visible = True
+        suggestions_container.update()
+        suggestions_dismiss_layer.update()
+
+    search_field.on_change = update_suggestions
+    search_field.on_focus = update_suggestions
+
     def perform_search(e):
+        if suggestions_container.visible:
+            hide_suggestions()
+
         if results_column.page:
             results_column.controls = [
                 ft.Container(
@@ -1400,6 +1578,8 @@ def main(page: ft.Page):
         if filter_menu.visible:
             toggle_filter_menu(False)
         query = search_field.value
+        state.add_to_search_history(query)  # Save history
+
         current_channel = getattr(channel_dropdown, "data", channel_dropdown.value)
         active_filters.clear()
         active_filters.add("No package set")
@@ -1894,6 +2074,9 @@ def main(page: ft.Page):
                 filter_badge_container,
                 toggle_filter_menu,
                 global_refresh_action,
+                suggestions_overlay=ft.Stack(
+                    [suggestions_dismiss_layer, suggestions_container], expand=True
+                ),
             )
         elif idx == 2:
             active_cart_list_control[0] = ft.Column(spacing=10)

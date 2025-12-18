@@ -158,6 +158,11 @@ class AppState:
 
         # History
         self.recent_activity = []
+        self.search_history = []
+        self.enable_search_history = True
+        self.search_history_limit = 20
+        self.max_search_suggestions = 5
+        self.fuzzy_search_history = False
 
         # Active Process Views (New Feature)
         self.active_process_views = {}
@@ -399,6 +404,11 @@ class AppState:
                     self.favourites = data.get("favourites", [])
                     self.saved_lists = data.get("saved_lists", {})
                     self.recent_activity = data.get("recent_activity", [])
+                    self.search_history = data.get("search_history", [])
+                    self.enable_search_history = data.get("enable_search_history", True)
+                    self.search_history_limit = data.get("search_history_limit", 20)
+                    self.max_search_suggestions = data.get("max_search_suggestions", 5)
+                    self.fuzzy_search_history = data.get("fuzzy_search_history", False)
 
             except Exception as e:
                 print(f"Error loading settings: {e}")
@@ -504,6 +514,11 @@ class AppState:
                 "favourites": self.favourites,
                 "saved_lists": self.saved_lists,
                 "recent_activity": self.recent_activity,
+                "search_history": self.search_history,
+                "enable_search_history": self.enable_search_history,
+                "search_history_limit": self.search_history_limit,
+                "max_search_suggestions": self.max_search_suggestions,
+                "fuzzy_search_history": self.fuzzy_search_history,
             }
             with open(CONFIG_FILE, "w") as f:
                 json.dump(data, f, indent=4)
@@ -657,6 +672,36 @@ class AppState:
 
     def clear_history(self):
         self.recent_activity = []
+        self.save_settings()
+
+    def add_to_search_history(self, query):
+        if not self.enable_search_history or not query.strip():
+            return
+
+        query = query.strip()
+        # Remove existing if present to move to top
+        if query in self.search_history:
+            self.search_history.remove(query)
+
+        self.search_history.insert(0, query)
+
+        # Trim
+        if len(self.search_history) > self.search_history_limit:
+            self.search_history = self.search_history[: self.search_history_limit]
+
+        self.save_settings()
+
+    def remove_from_search_history(self, query):
+        if query in self.search_history:
+            self.search_history.remove(query)
+            self.save_settings()
+
+    def clear_search_history(self):
+        self.search_history = []
+        self.save_settings()
+
+    def restore_search_history(self, history):
+        self.search_history = history
         self.save_settings()
 
     def is_favourite(self, package, channel):
